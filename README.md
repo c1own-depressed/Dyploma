@@ -1,2 +1,1 @@
-# Dymplomna
-Dymplomna
+Dyploma
