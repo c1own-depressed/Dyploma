@@ -77,15 +77,26 @@ async function takeTask() {
   }
 }
 
-// Функція для зв'язку з замовником
-function contactOwner() {
-  const email = task.value.owner_email;
-  if (email) {
-    window.location.href = `mailto:${email}`;
-  } else {
-    errorMessage.value = "Email замовника не вказано.";
+async function contactOwner() {
+  try {
+    const response = await axios.post(`http://localhost:8000/chats/with-owner/${task.value.id}`, {}, {
+      headers: {
+        Authorization: `Bearer ${jwt.value}`
+      }
+    });
+
+    const chatId = response.data.chat_id;
+
+    // Перенаправлення на конкретний чат
+    router.push(`/chats/${chatId}`);
+  } catch (error) {
+    console.error('Не вдалося створити чат:', error);
+    errorMessage.value = "Не вдалося зв'язатися із замовником.";
   }
 }
+
+
+
 
 // Функція для переходу назад на головну
 function goBack() {

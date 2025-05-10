@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi_users import FastAPIUsers
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
+from sqlalchemy import select, update, insert
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
@@ -9,7 +9,7 @@ from datetime import datetime
 from auth.auth import auth_backend
 from auth.database import get_async_session, User
 from auth.manager import get_user_manager
-from models.models import task, user as user_table  # <=== уникаємо конфлікту назв
+from models.models import task, user as user_table, chat  # <=== уникаємо конфлікту назв
 
 router = APIRouter(
     prefix="/tasks",
@@ -124,4 +124,3 @@ async def take_task(
         raise HTTPException(status_code=404, detail="User not found")
 
     return {"message": "Task successfully taken", "executor_name": user_row.username}
-

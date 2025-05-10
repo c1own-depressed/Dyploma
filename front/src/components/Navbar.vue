@@ -3,12 +3,14 @@
     <div class="nav-links">
       <router-link to="/main-page" class="nav-link">Головна сторінка</router-link>
       <router-link to="/profile" class="nav-link">Профіль</router-link>
+      <router-link to="/chats" class="nav-link">Чати</router-link>
     </div>
     <button @click="logout" class="logout-button">
       Вийти
     </button>
   </nav>
 </template>
+
 
 <script setup>
 import { useRouter } from 'vue-router'

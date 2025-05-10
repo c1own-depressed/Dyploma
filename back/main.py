@@ -24,6 +24,7 @@ from routes.editstartup import router as edit_startup_router
 from routes.edittask import router as edit_task_router
 from routes.completetask import router as complete_task_router
 from routes.taskresult import router as result_task_router
+from routes.chats import router as chats_router
 
 fastapi_users = FastAPIUsers[User, int](
     get_user_manager,
@@ -62,3 +63,4 @@ app.include_router(edit_startup_router)
 app.include_router(edit_task_router)
 app.include_router(complete_task_router)
 app.include_router(result_task_router)
+app.include_router(chats_router)

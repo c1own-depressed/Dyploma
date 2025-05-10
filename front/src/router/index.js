@@ -7,6 +7,9 @@ import TaskDetails from '../views/TaskDetails.vue';
 import ProfilePage from '../views/ProfilePage.vue';
 import TaskResult from '../views/TaskResult.vue';
 
+import ChatsLayout from '../views/ChatsLayout.vue';
+import ChatWindow from '../views/ChatWindow.vue';
+
 // Динамічні імпорти
 const CreateStartup = () => import('@/views/CreateStartup.vue');
 const EditStartup = () => import('@/views/EditStartup.vue');
@@ -45,10 +48,10 @@ const routes = [
         meta: { requiresAuth: true }
     },
     {
-        path: '/profile/:ownerId', // Маршрут для перегляду профілю власника стартапу
+        path: '/profile/:ownerId',
         name: 'ProfileOwner',
         component: ProfilePage,
-        props: true, // передаємо ownerId як пропс
+        props: true,
         meta: { requiresAuth: true }
     },
     {
@@ -95,12 +98,26 @@ const routes = [
         props: true,
         meta: { requiresAuth: true }
     },
-    // Редирект на логін
+    {
+        path: '/chats',
+        component: ChatsLayout,
+        meta: { requiresAuth: true },
+        children: [
+            {
+                path: '',
+                component: ChatWindow
+            },
+            {
+                path: ':id',
+                component: ChatWindow,
+                props: true
+            }
+        ]
+    },
     {
         path: '/',
         redirect: '/login'
     },
-    // Редирект на логін для невизначених шляхів
     {
         path: '/:pathMatch(.*)*',
         redirect: '/login'
@@ -112,7 +129,6 @@ const router = createRouter({
     routes
 });
 
-// Перевірка авторизації перед переходом
 router.beforeEach((to, from, next) => {
     const token = localStorage.getItem('jwtToken');
     if (to.matched.some(record => record.meta.requiresAuth) && !token) {

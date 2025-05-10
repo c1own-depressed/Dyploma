@@ -56,11 +56,23 @@ chat = Table(
     "chats",
     metadata,
     Column("id", Integer, primary_key=True),
-    Column("task_id", Integer, ForeignKey("tasks.id")),
-    Column("user_id", Integer, ForeignKey("user.id")),
-    Column("message", Text, nullable=False),
+    Column("task_id", Integer, ForeignKey("tasks.id"), nullable=False),
+    Column("user1_id", Integer, ForeignKey("user.id"), nullable=False),  # замовник
+    Column("user2_id", Integer, ForeignKey("user.id"), nullable=False),  # виконавець
     Column("created_at", TIMESTAMP, default=datetime.utcnow),
 )
+
+message = Table(
+    "messages",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("chat_id", Integer, ForeignKey("chats.id"), nullable=False),
+    Column("sender_id", Integer, ForeignKey("user.id"), nullable=False),
+    Column("content", Text, nullable=False),
+    Column("created_at", TIMESTAMP, default=datetime.utcnow),
+    Column("is_read", Boolean, default=False),
+)
+
 
 # 5. Оцінки (Rating)
 rating = Table(
