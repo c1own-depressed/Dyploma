@@ -266,57 +266,118 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* ... (всі ваші попередні стилі для .profile-page, .user-info, .tabs, .task-item, кнопок і т.д. ЗАЛИШАЮТЬСЯ ЯК Є) ... */
+
 .profile-page {
   padding: 2rem;
-  font-family: 'Segoe UI', sans-serif;
-  color: #fff;
-  background-image: url('../assets/img.jpg');
+  padding-top: 80px; /* Відступ для Navbar */
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  color: #f0f0f0;
+  background-image: url('../assets/img.jpg'); /* Переконайтесь, що шлях правильний */
   background-size: cover;
+  background-position: center;
+  background-attachment: fixed; /* Фіксований фон */
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: center; /* Центруємо основний контент */
   width: 100%;
 }
 
-.user-info {
-  background: rgba(255, 255, 255, 0.05);
-  padding: 1rem;
-  margin-bottom: 1.5rem;
-  border-radius: 12px;
-}
-.Profile123{
+/* Заголовок сторінки */
+.Profile123 {
+  font-size: 2.2rem;
+  font-weight: 600;
+  color: #ffffff;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
   margin-top: 50px;
+  margin-bottom: 2.5rem;
+  text-align: center;
 }
+
+.user-info {
+  background: rgba(35, 30, 50, 0.65);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  padding: 1.8rem 2.2rem;
+  margin-bottom: 2rem;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  width: 100%;
+  max-width: 240px; /* У вашому коді було 240px, якщо це ок, залишаємо */
+  text-align: center; /* Текст всередині user-info буде по центру */
+}
+
+.user-info p {
+  display: flex;
+  align-items: center;
+  justify-content: center; /* Для центрування іконки та тексту, якщо text-align:center у батька */
+  font-size: 1rem;
+  margin-bottom: 0.8rem;
+  color: #e0e1e6;
+}
+.user-info p:last-child {
+  margin-bottom: 0;
+}
+.user-info strong {
+  color: #ffffff;
+  font-weight: 500;
+}
+.icon {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 0.8rem;
+  color: #a0a8b5;
+}
+.icon-svg {
+  width: 1.2em;
+  height: 1.2em;
+  stroke: currentColor;
+}
+
 .tabs {
   display: flex;
   justify-content: center;
   gap: 1rem;
-  margin-bottom: 1rem;
+  margin-bottom: 2rem;
 }
 
 .tabs button {
-  padding: 0.5rem 1.2rem;
-  border: 1px solid rgba(255, 255, 255, 0.4);
+  padding: 0.7rem 1.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
   cursor: pointer;
-  background: rgba(255, 255, 255, 0.1);
-  color: white;
-  border-radius: 8px;
-  transition: background 0.3s, border 0.3s;
+  background: rgba(50, 50, 70, 0.5);
+  color: #e0e1e6;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  transition: background-color 0.2s, border-color 0.2s, color 0.2s;
 }
 
 .tabs button:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(70, 70, 90, 0.65);
+  border-color: rgba(255, 255, 255, 0.3);
 }
 
 .tabs button.active {
-  background: rgba(0, 123, 255, 0.4);
-  border-color: #007bff;
+  background: #007aff;
+  border-color: #007aff;
+  color: #ffffff;
+  box-shadow: 0 0 10px rgba(0, 123, 255, 0.5);
 }
 
 .tab-content {
   width: 100%;
-  max-width: 700px;
+  max-width: 800px;
+}
+.tab-content h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 1.5rem;
+  text-align: center;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
 
 .tab-content ul {
@@ -325,195 +386,178 @@ onMounted(() => {
   width: 100%;
 }
 
-.tab-content li {
-  background: rgba(255, 255, 255, 0.07);
-  padding: 1rem;
-  border-radius: 10px;
-  margin-bottom: 0.6rem;
-  display: flex;
-  flex-direction: column;
+.task-item {
+  background: rgba(35, 30, 50, 0.6);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  padding: 1.5rem;
+  border-radius: 16px;
+  margin-bottom: 1.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  transition: box-shadow 0.3s ease;
+}
+.task-item:hover {
+  box-shadow: 0 6px 25px rgba(0, 0, 0, 0.35);
 }
 
-.icon {
-  display: inline-flex;
-  align-items: center;
-  margin-right: 0.5rem;
-}
-
-.icon-svg {
-  width: 1em;
-  height: 1em;
-  stroke: white;
-}
-
-.task-header {
-  padding: 0.6rem;
-  cursor: pointer;
-}
-
-.task-header-content {
+.task-header, .task-toggle {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding: 0.5rem 0;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 1rem;
+}
+.task-item ul .task-toggle {
+  border-top: 1px solid rgba(255,255,255,0.05);
+  margin-top: 0.5rem;
+}
+.task-item > .task-header {
+  padding-top: 0;
+  margin-bottom: 1rem;
 }
 
-.task-title {
+.task-title, .task-title-text {
   flex-grow: 1;
-  text-align: center;
-  font-weight: bold;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #e8e9ed;
 }
-
-.task-meta {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.task-status {
-  padding: 0.2rem 0.6rem;
-  border-radius: 6px;
-  background-color: rgba(255, 255, 255, 0.2);
-}
-
-.task-status.in_progress {
-  color: #7ae3f8;
-  background-color: transparent;
-}
-
-.task-status.pending {
-  color: #7ae3f8;
-  background-color: transparent;
-}
-
-.task-status.completed {
-  color: #7ae3f8;
-  background-color: transparent;
-}
-
-
 .centered-title {
   text-align: center;
-  width: 100%;
   font-size: 1.2rem;
 }
-
-.task-status {
-  text-align: center;
-}
-
-.task-status.pending {
-  color: #ffc107;
-}
-
-.task-status.in_progress {
-  color: #17a2b8;
-}
-
-.task-status.completed {
-  color: #28a745;
+.task-title-text {
+  margin-left: 0;
+  white-space: normal;
 }
 
 .expand-toggle {
-  text-align: right;
-  font-size: 1.5rem;
-  color: #ccc;
+  font-size: 1.3rem;
+  color: #a0a8b5;
+  padding: 0.3rem;
+  transition: transform 0.4s ease-in-out; /* Збільшено тривалість для стрілки */
 }
+/* .task-header .expand-toggle, .task-toggle .expand-toggle {
+  transform: translateY(0);
+} */
+/* Цей блок вище не потрібен, якщо ви просто змінюєте текст стрілки ▲/▼ */
+/* Якщо ви використовуєте CSS для обертання стрілки, тоді клас .rotated потрібен */
+
 
 .task-details {
-  padding-top: 1rem;
-  width: 100%;
+  padding-top: 0.8rem; /* Збільшено для кращого ефекту при розгортанні */
+  color: #c5c8ce;
+  line-height: 1.6;
 }
-
 .task-details p {
-  margin: 0.5rem 0;
+  margin: 0.6rem 0;
+}
+.task-details h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #d5d8de;
+  margin-top: 1.2rem;
+  margin-bottom: 0.5rem;
+}
+.task-details ul {
+  padding-left: 1rem;
+  margin-top: 0.5rem;
+}
+.task-details ul li {
+  background: transparent;
+  padding: 0.3rem 0;
+  border-radius: 0;
+  margin-bottom: 0.3rem;
+  box-shadow: none;
+  border: none;
 }
 
-.complete-btn {
-  margin-top: 1rem;
-  padding: 0.6rem 1rem;
-  background-color: transparent;
-  color: #fff;
-  border: 2px solid #007bff;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: background 0.3s, color 0.3s, border-color 0.3s;
-  margin-right: 1rem;
-}
-
-.complete-btn:hover {
-  background-color: rgba(0, 123, 255, 0.2);
-  color: #fff;
-  border-color: #0056b3;
-}
-
-.create-startup-btn {
-  margin-bottom: 1rem;
-  background-color: rgba(0, 123, 255, 0.4);
-  color: #fff;
-  padding: 0.5rem 1rem;
+/* Кнопки дій */
+.create-startup-btn, .edit-btn, .complete-btn {
+  padding: 0.7rem 1.3rem;
   border: none;
   border-radius: 8px;
   cursor: pointer;
-  transition: background 0.3s;
-}
-
-.create-startup-btn:hover {
-  background-color: rgba(0, 123, 255, 0.6);
-}
-
-/* Стиль для кнопки редагування */
-.edit-btn {
-  margin-top: 1rem;
-  padding: 0.6rem 1rem;
-  background-color: transparent;
-  color: #fff;
-  border: 2px solid #e2a9fd;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: background 0.3s, color 0.3s, border-color 0.3s;
-}
-
-.edit-btn:hover {
-  background-color: rgba(142, 68, 173, 0.2);
-  color: #fff;
-  border-color: #c786e4;
-}
-.task-toggle {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  cursor: pointer;
   font-weight: 500;
-  padding: 0.3rem 0;
+  font-size: 0.9rem;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+  margin-right: 0.8rem;
+  margin-top: 1rem;
+}
+.task-details button:last-child {
+  margin-right: 0;
 }
 
-.task-title-text {
-  margin-left: 20px;
-  flex: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.create-startup-btn {
+  background-color: #007aff;
+  color: #ffffff;
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+  margin-bottom: 1.5rem;
+}
+.create-startup-btn:hover {
+  background-color: #005bb5;
+  box-shadow: 0 2px 8px rgba(0, 123, 255, 0.4);
 }
 
-.expand-toggle {
-  font-size: 1.2rem;
-  color: #ccc;
-  margin-left: 0.5rem;
+.edit-btn {
+  background-color: rgba(147, 38, 198, 0.7);
+  color: #ffffff;
 }
+.edit-btn:hover {
+  background-color: rgba(120, 30, 160, 0.8);
+  box-shadow: 0 2px 8px rgba(147, 38, 198, 0.4);
+}
+
+.complete-btn {
+  background-color: transparent;
+  color: #82ddf0;
+  border: 1px solid #82ddf0;
+}
+.complete-btn:hover {
+  background-color: rgba(130, 221, 240, 0.15);
+  border-color: #a0e5f3;
+  box-shadow: 0 2px 8px rgba(130, 221, 240, 0.3);
+}
+.complete-btn.paid-style {
+  border-color: #5cb85c;
+  color: #5cb85c;
+}
+.complete-btn.paid-style:hover {
+  background-color: rgba(92, 184, 92, 0.15);
+  border-color: #77c977;
+  box-shadow: 0 2px 8px rgba(92, 184, 92, 0.3);
+}
+
+/* ОНОВЛЕНІ СТИЛІ АНІМАЦІЇ */
 .expandable {
   overflow: hidden;
 }
-
-.expand-enter-active, .expand-leave-active {
-  transition: all 0.3s ease;
-  max-height: 1000px; /* або підбери значення, яке більше за очікуваний контент */
+.expand-enter-active,
+.expand-leave-active {
+  transition: max-height 0.5s cubic-bezier(0.4, 0, 0.2, 1),
+  opacity 0.45s cubic-bezier(0.4, 0, 0.2, 1) 0.05s, /* Opacity анімується з невеликою затримкою */
+  padding-top 0.5s cubic-bezier(0.4, 0, 0.2, 1),
+  padding-bottom 0.5s cubic-bezier(0.4, 0, 0.2, 1),
+  margin-top 0.5s cubic-bezier(0.4, 0, 0.2, 1),
+  margin-bottom 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  max-height: 1000px; /* Або більше, якщо контент може бути дуже високим */
   opacity: 1;
+  /* padding-top та padding-bottom будуть взяті з .task-details або встановлені тут */
 }
 
-.expand-enter-from, .expand-leave-to {
+.expand-enter-from,
+.expand-leave-to {
   max-height: 0;
   opacity: 0;
+  padding-top: 0 !important; /* !important для перевизначення, якщо є конфлікти */
+  padding-bottom: 0 !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  /* Сюди можна додати інші властивості, які мають анімуватися до 0, наприклад, border-width */
 }
-
-
 </style>

@@ -108,119 +108,139 @@ export default {
 </script>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap');
 
 .login-page {
   font-family: 'Poppins', sans-serif;
-  background: linear-gradient(to bottom, #2b1055, #7597de);
-  background-image: url('../assets/img.jpg');
+  background: linear-gradient(to bottom, #2b1055, #7597de); /* Запасний фон */
+  background-image: url('../assets/img.jpg'); /* Переконайтеся, що шлях правильний */
   background-size: cover;
   background-position: center;
+  background-attachment: fixed; /* Фіксований фон */
   min-height: 100vh;
   display: flex;
   justify-content: center;
   align-items: center;
   padding: 2rem;
+  color: #f0f0f0; /* Основний світлий колір тексту */
 }
 
 .login-card {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(10px);
+  background: rgba(30, 25, 45, 0.85); /* Темний, насичений фон картки */
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border-radius: 20px;
-  padding: 3rem 2.5rem;
-  box-shadow: 0 0 40px rgba(0, 0, 0, 0.4);
+  padding: 2.5rem; /* Зроблено однаковим з усіх боків */
+  box-shadow: 0 8px 35px rgba(0, 0, 0, 0.45); /* Глибша тінь */
+  border: 1px solid rgba(255, 255, 255, 0.12); /* Тонка світла межа */
   width: 100%;
-  max-width: 400px;
-  color: white;
-  text-align: center;
+  max-width: 420px; /* Трохи збільшено для комфорту */
+  color: #f0f0f0;
+  text-align: left; /* Вирівнювання по лівому краю для вмісту форми */
 }
 
-h2 {
+.login-card h2 {
   font-size: 2rem;
-  margin-bottom: 2rem;
+  margin-bottom: 2.2rem;
   font-weight: 600;
+  color: #ffffff;
+  text-align: center; /* Заголовок по центру */
+  text-shadow: 0 1px 3px rgba(0,0,0,0.3);
 }
 
 .input-group {
   position: relative;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.8rem;
 }
 
-.input-group input {
+.input-group input { /* Стиль для input type="email" та type="password" */
   width: 100%;
-  padding: 0.75rem 2.5rem 0.75rem 1rem;
-  background: rgba(255, 255, 255, 0.1);
-  border: none;
+  padding: 0.9rem 3rem 0.9rem 1.1rem; /* Збільшено падінги, правий падінг для іконки */
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 10px;
-  color: white;
+  color: #ffffff;
   font-size: 1rem;
+  font-family: 'Poppins', sans-serif;
   outline: none;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
 }
 
 .input-group input::placeholder {
-  color: #ccc;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.input-group input:focus {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.3);
 }
 
 .input-group .icon {
   position: absolute;
-  right: 1rem;
+  right: 1rem; /* Відступ іконки справа */
   top: 50%;
   transform: translateY(-50%);
-  font-size: 1.2rem;
+  color: rgba(255, 255, 255, 0.7); /* Трохи менш яскрава іконка */
+  pointer-events: none; /* Щоб іконка не заважала кліку на поле */
+}
+
+.icon-svg { /* Розмір SVG іконок */
+  width: 20px; /* Або 1.2em */
+  height: 20px;
+  stroke: currentColor; /* Колір успадковується від .icon */
+}
+
+/* .options - такого класу немає у вашому HTML, тому його стилі видалені */
+
+input[type="submit"] { /* Кнопка "Увійти" */
+  background-color: #007AFF; /* Синій акцент, як основна дія */
   color: white;
-  opacity: 1;
-}
-
-.options {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.9rem;
-  margin-bottom: 1.5rem;
-  color: #ccc;
-}
-
-.options a {
-  color: #bbb;
-  text-decoration: none;
-}
-
-input[type="submit"] {
-  background: white;
-  color: #2b1055;
   border: none;
-  padding: 0.8rem;
+  padding: 0.9rem 1.5rem;
   width: 100%;
   border-radius: 10px;
-  font-weight: bold;
+  font-weight: 600; /* Збільшено жирність */
+  font-size: 1rem;
   cursor: pointer;
-  transition: background 0.3s ease;
+  transition: background-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
   text-transform: uppercase;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
+  margin-top: 0.5rem; /* Невеликий відступ зверху */
 }
 
 input[type="submit"]:hover {
-  background: #eee;
+  background-color: #005bb5; /* Темніший синій */
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 123, 255, 0.4);
 }
 
-.error {
-  margin-top: 1rem;
-  color: #ff6b6b;
-  font-weight: bold;
-}
-
-.icon-svg {
-  width: 24px;
-  height: 24px;
+.error { /* Стиль для повідомлення про помилку */
+  margin-top: 1.5rem;
+  color: #ff9a9a;
+  background-color: rgba(255, 82, 82, 0.15);
+  border: 1px solid rgba(255, 82, 82, 0.35);
+  padding: 0.9rem 1.2rem;
+  border-radius: 8px;
+  text-align: center;
+  font-size: 0.95rem;
+  font-weight: 500;
 }
 
 .register-switch {
-  margin-top: 1.5rem;
-  font-size: 0.95rem;
-  color: #ccc;
+  margin-top: 2rem; /* Збільшено відступ */
+  font-size: 0.9rem; /* Трохи зменшено */
+  color: #b0b8c5; /* Світло-сірий */
+  text-align: center; /* Явно центруємо */
 }
 
 .register-switch a {
-  color: #fff;
-  font-weight: bold;
-  text-decoration: underline;
+  color: #90caf9; /* Блакитний акцент для посилання */
+  font-weight: 600; /* Жирніший */
+  text-decoration: none; /* Прибираємо підкреслення за замовчуванням */
+  transition: color 0.2s ease, text-decoration 0.2s ease;
+}
+.register-switch a:hover {
+  color: #bbdefb; /* Світліший блакитний при наведенні */
+  text-decoration: underline; /* Підкреслення при наведенні */
 }
 </style>

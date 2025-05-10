@@ -107,113 +107,154 @@ onMounted(fetchStartup)
 </script>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap'); /* Додано Poppins 500 */
 
 .edit-startup-page {
   font-family: 'Poppins', sans-serif;
-  background: linear-gradient(to bottom, #2b1055, #7597de);
-  background-image: url('../assets/img.jpg');
+  background: linear-gradient(to bottom, #2b1055, #7597de); /* Запасний фон */
+  background-image: url('../assets/img.jpg'); /* Переконайтеся, що шлях правильний */
   background-size: cover;
   background-position: center;
+  background-attachment: fixed; /* Фіксований фон */
   min-height: 100vh;
   display: flex;
   justify-content: center;
   align-items: center;
   padding: 2rem;
+  color: #f0f0f0; /* Основний світлий колір тексту */
 }
 
 .startup-card {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(10px);
+  background: rgba(30, 25, 45, 0.85); /* Темний, насичений фон картки */
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border-radius: 20px;
-  padding: 3rem 2.5rem;
-  box-shadow: 0 0 40px rgba(0, 0, 0, 0.4);
+  padding: 2.5rem 3rem; /* Збалансовані падінги */
+  box-shadow: 0 8px 35px rgba(0, 0, 0, 0.45); /* Глибша тінь */
+  border: 1px solid rgba(255, 255, 255, 0.12); /* Тонка світла межа */
   width: 100%;
-  max-width: 500px;
-  color: white;
-  text-align: center;
+  max-width: 550px; /* Трохи збільшено для комфорту */
+  color: #f0f0f0;
+  text-align: left; /* Вирівнювання по лівому краю для форми */
 }
 
-h2 {
+.startup-card h2 {
   font-size: 2rem;
-  margin-bottom: 2rem;
+  margin-bottom: 2.5rem; /* Більший відступ */
   font-weight: 600;
+  color: #ffffff;
+  text-align: center; /* Заголовок по центру */
+  text-shadow: 0 1px 3px rgba(0,0,0,0.3);
 }
 
 .input-group {
   position: relative;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.8rem; /* Збільшено відступ */
 }
 
-.input-group input,
+.input-group input[type="text"], /* Уточнено селектор */
 .input-group textarea {
   width: 100%;
-  padding: 0.75rem 1rem;
-  background: rgba(255, 255, 255, 0.1);
-  border: none;
-  border-radius: 10px;
-  color: white;
+  padding: 0.9rem 1.1rem; /* Збільшено падінги */
+  background: rgba(255, 255, 255, 0.08); /* Стандартний фон для полів */
+  border: 1px solid rgba(255, 255, 255, 0.18); /* Стандартна межа */
+  border-radius: 10px; /* Стандартний радіус */
+  color: #ffffff;
   font-size: 1rem;
+  font-family: 'Poppins', sans-serif; /* Щоб шрифт був однаковий */
   outline: none;
-  resize: none;
+  resize: vertical; /* Дозволяємо змінювати висоту textarea по вертикалі */
+  transition: background-color 0.2s ease, border-color 0.2s ease;
 }
 
-.input-group input::placeholder,
+.input-group input[type="text"]::placeholder,
 .input-group textarea::placeholder {
-  color: #ccc;
+  color: rgba(255, 255, 255, 0.6); /* Стандартний колір плейсхолдера */
 }
 
-input[type="submit"] {
-  background: transparent;
+.input-group input[type="text"]:focus,
+.input-group textarea:focus {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+input[type="submit"] { /* Кнопка "Зберегти зміни" */
+  background-color: #007AFF; /* Синій акцент, як основна дія */
   color: white;
   border: none;
-  padding: 0.8rem;
+  padding: 0.9rem 1.5rem; /* Збільшено падінги */
   width: 100%;
   border-radius: 10px;
-  font-weight: bold;
+  font-weight: 600; /* Збільшено жирність */
+  font-size: 1rem; /* Узгоджено розмір шрифту */
   cursor: pointer;
-  transition: background 0.3s ease;
+  transition: background-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
   text-transform: uppercase;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
 }
 
 input[type="submit"]:hover {
-  background: #c786e4;
+  background-color: #005bb5; /* Темніший синій */
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 123, 255, 0.4);
 }
 
 .back-link {
-  display: inline-block;
-  margin-bottom: 1rem;
-  color: #ffffff;
+  display: inline-flex; /* Для вирівнювання тексту та можливої іконки */
+  align-items: center;
+  margin-bottom: 2rem; /* Збільшено відступ */
+  color: #c0c5d0; /* Світло-сірий */
   cursor: pointer;
-  font-weight: 600;
-  text-align: left;
-  transition: color 0.3s ease;
+  font-weight: 500; /* Звичайна жирність */
+  text-decoration: none;
+  font-size: 0.95rem;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  transition: color 0.2s ease, background-color 0.2s ease;
 }
 
 .back-link:hover {
-  color: #5d1485;
+  color: #ffffff;
 }
 
 .delete-button {
-  margin-top: 1.5rem;
-  background: transparent;
+  margin-top: 2rem; /* Збільшено відступ */
+  background-color: rgba(220, 53, 69, 0.7); /* Червоний фон для небезпечної дії */
   border: none;
-  padding: 0.75rem;
+  /* border: 1px solid rgba(255, 82, 82, 0.5); */ /* Альтернатива: межа */
+  padding: 0.9rem 1.5rem; /* Узгоджено з кнопкою submit */
   width: 100%;
   border-radius: 10px;
-  font-weight: bold;
-  color: #fff;
+  font-weight: 600; /* Збільшено жирність */
+  font-size: 1rem; /* Узгоджено розмір шрифту */
+  color: #ffffff;
   cursor: pointer;
-  transition: background 0.3s ease;
+  transition: background-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
   text-transform: uppercase;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
 }
 
 .delete-button:hover {
-  background: rgba(255, 0, 0, 0.5);
+  background-color: rgba(200, 33, 49, 0.85); /* Темніший червоний */
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(220, 53, 69, 0.4);
 }
 
 .error-message {
-  color: #ffaaaa;
-  margin-bottom: 1rem;
+  color: #ff9a9a;
+  background-color: rgba(255, 82, 82, 0.15);
+  border: 1px solid rgba(255, 82, 82, 0.35);
+  padding: 0.9rem 1.2rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  text-align: center;
+  font-size: 0.95rem;
+}
+
+/* Стиль для тексту завантаження */
+div[style="color:white; margin-top: 2rem;"] {
+  color: #b0b8c5 !important; /* Перевизначаємо інлайн стиль */
+  font-size: 1.1rem;
+  text-align: center;
 }
 </style>

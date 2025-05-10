@@ -1,8 +1,9 @@
 <template>
   <main class="task-detail-page">
-    <button class="back-btn" @click="goBack">← Назад на головну</button>
+
 
     <div v-if="task" class="task-card">
+      <button class="back-btn" @click="goBack">← Назад на головну</button>
       <h2 class="task-title">{{ task.title }}</h2>
       <p class="task-field"><strong>Опис:</strong> {{ task.description }}</p>
       <p class="task-field"><strong>Дата створення:</strong> {{ task.created_at }}</p>
@@ -109,88 +110,156 @@ onMounted(fetchTask);
 <style scoped>
 .task-detail-page {
   padding: 2rem;
-  font-family: 'Segoe UI', sans-serif;
+  padding-top: 100px; /* Відступ для Navbar */
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   background-image: url('../assets/img.jpg');
   background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
   min-height: 100vh;
-  color: white;
+  color: #f0f0f0;
 }
 
 .back-btn {
-  margin-bottom: 1.5rem;
-  background: none;
-  border: none;
-  color: #fff;
-  font-size: 1rem;
+  display: inline-block; /* Щоб відступи працювали коректно і кнопка не займала всю ширину */
+  margin-bottom: 1.5rem; /* Відступ знизу перед заголовком картки */
+  background: none; /* Без фону */
+  border: none; /* Без рамки */
+  color: #b0b8c5; /* Світло-сіро-блакитний, добре для посилань */
+  font-size: 0.95rem; /* Розмір тексту */
+  font-weight: 500; /* Напівжирний */
   cursor: pointer;
+  text-decoration: none; /* Без підкреслення за замовчуванням */
+  padding: 0.2rem 0; /* Невеликий вертикальний падінг для кращої клікабельності, без горизонтального */
+  transition: color 0.2s ease;
+}
+
+.back-btn:hover {
+  color: #ffffff; /* Білий колір при наведенні */
+  text-decoration: underline; /* Підкреслення при наведенні для ясності, що це посилання */
 }
 
 .task-card {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(8px);
-  padding: 2rem;
-  border-radius: 15px;
-  box-shadow: 0 0 15px rgba(0, 0, 0, 0.3);
+  background: rgba(30, 25, 45, 0.82);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 2.2rem 2.5rem;
+  border-radius: 18px;
+  box-shadow: 0 6px 30px rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  width: 100%;
   max-width: 600px;
-  margin: 0 auto;
+  margin: 0 auto; /* Центрування картки на сторінці */
+  text-align: left;
 }
 
 .task-title {
-  font-size: 1.8rem;
-  font-weight: 600;
-  margin-bottom: 1rem;
-  color: #fff;
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 1.8rem;
+  color: #ffffff;
+  text-align: center;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.3);
 }
 
 .task-field {
-  margin-bottom: 0.8rem;
-  color: #eee;
-  line-height: 1.5;
+  margin-bottom: 1.1rem;
+  color: #dfe2e8;
+  line-height: 1.6;
+  font-size: 1rem;
+}
+
+.task-field strong {
+  color: #f8f9fa;
+  font-weight: 600;
+  margin-right: 0.6em;
+}
+
+/* Обгортка для кнопок, якщо вони мають бути в рядку */
+/* Якщо кнопки залишаються одна під одною, ця обгортка не потрібна в HTML,
+   а стилі для кнопок нижче вже враховують це */
+.action-buttons {
+  display: flex;
+  flex-direction: column; /* За замовчуванням кнопки одна під одною */
+  gap: 1rem;
+  margin-top: 2.2rem;
+}
+
+/* Медіа-запит для розташування кнопок в ряд на більших екранах, ЯКЩО ви додасте .action-buttons в HTML */
+@media (min-width: 500px) {
+  .action-buttons.horizontal { /* Додайте клас .horizontal до div.action-buttons для цього ефекту */
+    flex-direction: row;
+    justify-content: center;
+  }
+  .action-buttons.horizontal .take-btn,
+  .action-buttons.horizontal .contact-btn {
+    flex-grow: 1;
+    max-width: 240px;
+  }
+}
+
+.take-btn, .contact-btn {
+  display: block; /* Кожна кнопка на новому рядку (якщо не в .action-buttons.horizontal) */
+  width: 100%; /* Кнопки на всю ширину картки (якщо не в .action-buttons.horizontal) */
+  padding: 0.9rem 1.5rem;
+  font-size: 1rem;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  border: none;
+  color: white;
+  text-align: center;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
+}
+.take-btn:hover, .contact-btn:hover {
+  transform: translateY(-2px);
 }
 
 .take-btn {
-  margin-top: 1.2rem;
-  background: transparent;
-  color: white;
-  padding: 0.8rem 1.5rem;
-  font-size: 1rem;
-  border: 2px solid white;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: background 0.3s ease, color 0.3s ease;
+  /* margin-top залишено з вашого HTML, він перший після полів */
+  background-color: #007AFF;
 }
-
 .take-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #8ecfff;
+  background-color: #005bb5;
+  box-shadow: 0 4px 12px rgba(0, 123, 255, 0.4);
 }
 
 .contact-btn {
-  margin-top: 1.2rem;
-  margin-left: 10px;
-  background: transparent;
-  color: white;
-  padding: 0.8rem 1.5rem;
-  font-size: 1rem;
-  border: 2px solid white;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: background 0.3s ease, color 0.3s ease;
+  margin-top: 1rem; /* Відступ зверху для другої кнопки */
+  background-color: #9326C6;
 }
-
 .contact-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #8ecfff;
+  background-color: #7a1fcf;
+  box-shadow: 0 4px 12px rgba(147, 38, 198, 0.4);
 }
 
 .error-text {
-  color: red;
-  margin-top: 10px;
+  color: #ff9a9a;
+  background-color: rgba(255, 82, 82, 0.15);
+  border: 1px solid rgba(255, 82, 82, 0.35);
+  padding: 0.9rem 1.2rem;
+  border-radius: 8px;
+  margin-top: 1.5rem;
+  text-align: center;
+  font-size: 0.95rem;
 }
+p.error-text { /* Щоб повідомлення про помилку не розтягувалось на всю ширину, якщо воно коротке */
+  width: auto;
+  display: inline-block;
+  /* Для центрування inline-block елемента, його батьківський елемент (наприклад, .task-card)
+     мав би мати text-align: center; але картка має text-align: left.
+     Тому це правило може не центрувати так, як очікується, якщо текст помилки всередині картки.
+     Якщо помилка завжди має бути по центру картки, краще обгорнути її в div з text-align: center.
+     Поки що залишаємо так, як є у вашій структурі.
+  */
+}
+
 
 .loading-text {
   text-align: center;
-  font-size: 1.2rem;
-  color: #ccc;
+  font-size: 1.1rem;
+  color: #b0b8c5;
+  margin-top: 3rem;
 }
 </style>
