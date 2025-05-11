@@ -1,9 +1,9 @@
 from datetime import datetime
-
-from sqlalchemy import MetaData, Table, Column, Integer, String, JSON, TIMESTAMP, ForeignKey, Boolean, Text
+from sqlalchemy import MetaData, Table, Column, Integer, String, JSON, TIMESTAMP, ForeignKey, Boolean, Text, DateTime # Додано DateTime
 
 metadata = MetaData()
 role = Table(
+    # ... (визначення ролі)
     "role",
     metadata,
     Column("id", Integer, primary_key=True),
@@ -23,7 +23,9 @@ user = Table(
     Column("is_active", Boolean, default=True, nullable=False),
     Column("is_superuser", Boolean, default=False, nullable=False),
     Column("is_verified", Boolean, default=False, nullable=False),
+    Column("last_seen", DateTime, nullable=True),  # <--- ДОДАНО ЦЕ ПОЛЕ
 )
+# ... (решта ваших таблиць: startup, task, chat, message, rating, comment)
 # 2. Стартап (Startup)
 startup = Table(
     "startups",
@@ -68,9 +70,12 @@ message = Table(
     Column("id", Integer, primary_key=True),
     Column("chat_id", Integer, ForeignKey("chats.id"), nullable=False),
     Column("sender_id", Integer, ForeignKey("user.id"), nullable=False),
-    Column("content", Text, nullable=False),
-    Column("created_at", TIMESTAMP, default=datetime.utcnow),
+    Column("content", Text, nullable=True),  # <--- Дозволити NULL
+    Column("created_at", DateTime, default=datetime.utcnow), # Залишаємо DateTime для узгодженості
     Column("is_read", Boolean, default=False),
+    Column("file_path", String, nullable=True),          # <--- Шлях до файлу на сервері (унікальне ім'я)
+    Column("original_file_name", String, nullable=True), # <--- Оригінальне ім'я файлу
+    Column("mime_type", String, nullable=True)           # <--- MIME-тип файлу
 )
 
 
@@ -95,4 +100,3 @@ comment = Table(
     Column("user_id", Integer, ForeignKey("user.id")),
     Column("startup_id", Integer, ForeignKey("startups.id")),
 )
-

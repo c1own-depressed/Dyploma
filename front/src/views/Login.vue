@@ -83,6 +83,12 @@ export default {
         const token = response.data.access_token;
         localStorage.setItem("jwtToken", token);
         axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+        try {
+          await axios.post('http://localhost:8000/chats/me/ping-online'); // Шлях до вашого пінг-ендпоінту
+          // console.log("User explicitly pinged as online immediately after login.");
+        } catch (pingError) {
+          console.warn("Could not explicitly ping online status post-login:", pingError);
+        }
         login_form.value.email = "";
         login_form.value.password = "";
         loginError.value = null;
