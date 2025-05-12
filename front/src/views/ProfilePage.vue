@@ -43,49 +43,54 @@
         <button class="create-startup-btn" @click="createStartup">+ Створити стартап</button>
 
         <ul v-if="startups.length">
-          <li v-for="startup in startups" :key="startup.id" class="task-item">
-            <div class="task-header" @click="toggleExpand('startup', startup.id)">
-              <div class="task-title centered-title">{{ startup.name }}</div>
-              <span class="expand-toggle">{{ expandedIds.startups[startup.id] ? '▲' : '▼' }}</span>
-            </div>
+          <li v-for="startupItem in startups" :key="startupItem.id" class="task-item"> <div class="task-header" @click="toggleExpand('startup', startupItem.id)">
+            <div class="task-title centered-title">{{ startupItem.name }}</div>
+            <span class="expand-toggle">{{ expandedIds.startups[startupItem.id] ? '▲' : '▼' }}</span>
+          </div>
 
             <transition name="expand">
               <div
-                  v-show="expandedIds.startups[startup.id]"
+                  v-show="expandedIds.startups[startupItem.id]"
                   class="task-details expandable"
               >
-                <p>{{ startup.description }}</p>
+                <p>{{ startupItem.description }}</p>
                 <h4>Завдання:</h4>
-                <ul v-if="startup.tasks && startup.tasks.length">
-                  <li v-for="task in startup.tasks" :key="task.id">
-                    <div class="task-toggle" @click="toggleExpand('task', task.id)">
-                      <span class="task-title-text">{{ task.title }}</span>
-                      <span class="expand-toggle">{{ expandedIds.tasks[task.id] ? '▲' : '▼' }}</span>
-                    </div>
+                <ul v-if="startupItem.tasks && startupItem.tasks.length">
+                  <li v-for="taskItem in startupItem.tasks" :key="taskItem.id"> <div class="task-toggle" @click="toggleExpand('task', taskItem.id)">
+                    <span class="task-title-text">{{ taskItem.title }}</span>
+                    <span class="expand-toggle">{{ expandedIds.tasks[taskItem.id] ? '▲' : '▼' }}</span>
+                  </div>
 
                     <transition name="expand">
                       <div
-                          v-show="expandedIds.tasks[task.id]"
+                          v-show="expandedIds.tasks[taskItem.id]"
                           class="task-details expandable"
                       >
-                        <p>{{ task.description }}</p>
-                        <p>Статус: {{ getStatusText(task.status) }}</p>
-                        <!-- Кнопка редагування, тільки якщо статус не in_progress і не paid -->
+                        <p>{{ taskItem.description }}</p>
+                        <p>Статус: {{ getStatusText(taskItem.status) }}</p>
+
                         <button
-                            v-if="task.status !== 'in_progress' && task.status !== 'paid'"
+                            v-if="taskItem.status !== 'in_progress' && taskItem.status !== 'paid'"
                             class="edit-btn"
-                            @click.stop="editTask(task.id)"
+                            @click.stop="editTask(taskItem.id)"
                         >
                           Редагувати
                         </button>
 
-                        <!-- Кнопка перегляду результату, тільки якщо статус paid -->
                         <button
-                            v-if="task.status === 'paid'"
+                            v-if="taskItem.status === 'paid'"
                             class="complete-btn"
-                            @click.stop="viewTaskResult(task.id)"
+                            @click.stop="viewTaskResult(taskItem.id)"
                         >
                           Переглянути результат
+                        </button>
+
+                        <button
+                            v-if="taskItem.status === 'in_progress'"
+                            class="remove-executor-btn"
+                            @click.stop="removeExecutorByOwner(taskItem.id)"
+                        >
+                          Відключити виконавця
                         </button>
 
                       </div>
@@ -94,8 +99,8 @@
                 </ul>
                 <p v-else>Немає завдань</p>
 
-                <button class="complete-btn" @click.stop="editStartup(startup.id)">Редагувати</button>
-                <button class="edit-btn" @click.stop="createTask(startup.id)">+ Додати завдання</button>
+                <button class="complete-btn" @click.stop="editStartup(startupItem.id)">Редагувати</button>
+                <button class="edit-btn" @click.stop="createTask(startupItem.id)">+ Додати завдання</button>
               </div>
             </transition>
           </li>
@@ -120,12 +125,21 @@
               >
                 <p>{{ task.description }}</p>
                 <p>Статус: {{ getStatusText(task.status) }}</p>
+                <p v-if="task.owner_name">Замовник: {{ task.owner_name }}</p>
+
                 <button
                     v-if="task.status === 'in_progress'"
                     class="complete-btn"
                     @click.stop="markTaskAsCompleted(task.id)"
                 >
                   Виконати
+                </button>
+                <button
+                    v-if="task.status === 'in_progress'"
+                    class="refuse-btn"
+                    @click.stop="refuseTask(task.id)"
+                >
+                  Відмовитися
                 </button>
                 <button
                     v-else-if="task.status === 'done'"
@@ -255,8 +269,43 @@ const fetchUserRating = async () => {
     console.error('Не вдалося отримати рейтинг', e)
   }
 }
-
-
+const refuseTask = async (taskId) => {
+  try {
+    // Запит на новий ендпоінт для відмови від завдання
+    await axios.put(
+        `http://localhost:8000/user/tasks/${taskId}/refuse`,
+        {}, // Тіло запиту може бути порожнім, якщо дані не потрібні
+        { headers: { Authorization: `Bearer ${jwt}` } }
+    );
+    // Оновити список активних завдань (завдання має зникнути зі списку)
+    await fetchTasks();
+    // Тут можна додати сповіщення для користувача (наприклад, alert або через систему нотифікацій)
+    // alert('Ви успішно відмовилися від завдання.');
+  } catch (e) {
+    console.error('Не вдалося відмовитися від завдання', e);
+    // Обробка помилки, сповіщення користувача
+    // alert(`Помилка при відмові від завдання: ${e.response?.data?.detail || e.message}`);
+  }
+};
+const removeExecutorByOwner = async (taskId) => {
+  // Можна додати запит на підтвердження дії
+  // if (!confirm('Ви впевнені, що хочете відключити виконавця від цього завдання?')) {
+  //   return;
+  // }
+  try {
+    await axios.put(
+        `http://localhost:8000/user/startups/tasks/${taskId}/remove-executor`,
+        {}, // Тіло запиту не потрібне
+        { headers: { Authorization: `Bearer ${jwt}` } }
+    );
+    // Оновити список стартапів, щоб відобразити зміни в завданнях
+    await fetchStartups();
+    // alert('Виконавця успішно відключено, завдання переведено в статус "Очікує на виконавця".');
+  } catch (e) {
+    console.error('Не вдалося відключити виконавця:', e);
+    // alert(`Помилка при відключенні виконавця: ${e.response?.data?.detail || e.message}`);
+  }
+};
 onMounted(() => {
   fetchProfile()
   fetchStartups()
@@ -559,5 +608,41 @@ onMounted(() => {
   margin-top: 0 !important;
   margin-bottom: 0 !important;
   /* Сюди можна додати інші властивості, які мають анімуватися до 0, наприклад, border-width */
+}
+.refuse-btn {
+  background-color: #e74c3c; /* Червоний колір */
+  color: white;
+  padding: 0.7rem 1.3rem;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 0.9rem;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+  margin-right: 0.8rem;
+  margin-top: 1rem;
+}
+
+.refuse-btn:hover {
+  background-color: #c0392b; /* Темніший червоний при наведенні */
+  box-shadow: 0 2px 8px rgba(231, 76, 60, 0.4);
+}
+.remove-executor-btn {
+  background-color: #e67e22; /* Наприклад, помаранчевий */
+  color: white;
+  padding: 0.7rem 1.3rem;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 0.9rem;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+  margin-right: 0.8rem;
+  margin-top: 1rem;
+}
+
+.remove-executor-btn:hover {
+  background-color: #d35400; /* Темніший помаранчевий */
+  box-shadow: 0 2px 8px rgba(230, 126, 34, 0.4);
 }
 </style>
