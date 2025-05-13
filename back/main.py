@@ -55,6 +55,7 @@ app.include_router(
     prefix="/auth",
     tags=["auth"],
 )
+
 app.include_router(startup_router)
 app.include_router(tasks.router)
 app.include_router(profile_router, tags=["user"])

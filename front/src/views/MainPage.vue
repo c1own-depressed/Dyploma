@@ -13,46 +13,54 @@
       />
 
       <div
-          v-for="startup in filteredStartups"
-          :key="startup.id"
+          v-for="startupItem in filteredStartups" :key="startupItem.id"
           class="startup-card"
       >
-        <h3 class="title">{{ startup.name }}</h3>
+        <h3 class="title">{{ startupItem.name }}</h3>
 
         <div
             class="description-wrapper"
-            :class="{ expanded: expandedId === startup.id }"
-            :ref="el => setDescriptionRef(el, startup.id)"
+            :class="{ expanded: expandedId === startupItem.id }"
+            :ref="el => setDescriptionRef(el, startupItem.id)"
         >
           <p class="description-text">
-            {{ startup.description }}
+            {{ startupItem.description }}
           </p>
         </div>
 
-        <div class="expand-toggle" @click="toggleExpand(startup.id)">
-          <span :class="{ rotated: expandedId === startup.id }">▼</span>
+        <div class="expand-toggle" @click="toggleExpand(startupItem.id)">
+          <span :class="{ rotated: expandedId === startupItem.id }">▼</span>
         </div>
 
         <transition name="slide-fade">
-          <div v-if="expandedId === startup.id" class="additional-content">
+          <div v-if="expandedId === startupItem.id" class="additional-content">
             <h4>Завдання:</h4>
-            <ul v-if="startup.tasks && startup.tasks.length" class="task-list">
+            <ul v-if="startupItem.tasks && startupItem.tasks.length" class="task-list">
               <li
-                  v-for="task in startup.tasks"
-                  :key="task.id"
-                  class="clickable-task"
+                  v-for="taskItem in startupItem.tasks"
+                  :key="taskItem.id"
+                  :class="['task-list-item', { 'non-clickable': taskItem.status !== 'pending' }]"
               >
-                <router-link :to="`/task/${task.id}`">{{ task.title }}</router-link>
+                <component
+                    :is="taskItem.status === 'pending' ? 'router-link' : 'span'"
+                    :to="taskItem.status === 'pending' ? `/task/${taskItem.id}` : null"
+                    class="task-link"
+                >
+                  {{ taskItem.title }}
+                  <span v-if="taskItem.status !== 'pending'" class="task-status-indicator">
+                     ({{ getTaskStatusText(taskItem.status) }})
+                  </span>
+                </component>
               </li>
             </ul>
-            <p v-else-if="startup.tasks" class="empty-message">Немає завдань для цього стартапу.</p>
+            <p v-else-if="startupItem.tasks" class="empty-message">Немає завдань для цього стартапу.</p>
 
-            <p class="owner">Власник: {{ startup.owner_username }}</p>
+            <p class="owner">Власник: {{ startupItem.owner_username }}</p>
 
             <div class="comments-section">
               <h4>Коментарі</h4>
-              <ul class="comment-list" v-if="startup.comments && startup.comments.length">
-                <li v-for="comment in startup.comments" :key="comment.id">
+              <ul class="comment-list" v-if="startupItem.comments && startupItem.comments.length">
+                <li v-for="comment in startupItem.comments" :key="comment.id">
                   <div class="comment-meta">
                     <strong>{{ comment.author }}</strong> –
                     <span class="comment-date">{{ formatDate(comment.created_at) }}</span>
@@ -64,11 +72,11 @@
 
               <div class="add-comment">
                 <input
-                    v-model="startup.newComment"
+                    v-model="startupItem.newComment"
                     placeholder="Написати коментар..."
                     class="comment-input"
                 />
-                <button @click="addComment(startup.id)" class="comment-button">Надіслати</button>
+                <button @click="addComment(startupItem.id)" class="comment-button">Надіслати</button>
               </div>
             </div>
           </div>
@@ -97,10 +105,10 @@ async function fetchStartups() {
     const response = await axios.get('http://localhost:8000/startups', {
       headers: { Authorization: `Bearer ${jwt}` }
     })
-
+    // Переконуємося, що tasks існують і мають очікувані поля (включаючи status)
     startups.value = response.data.map(s => ({
       ...s,
-      tasks: s.tasks,
+      tasks: Array.isArray(s.tasks) ? s.tasks : [], // Гарантуємо, що tasks це масив
       comments: [],
       newComment: '',
     }))
@@ -139,7 +147,7 @@ async function addComment(startupId) {
           },
         }
     )
-
+    // Припускаємо, що response.data містить поле created_at, яке потрібно для formatDate
     startup.comments.push(response.data)
     startup.newComment = ''
   } catch (error) {
@@ -148,8 +156,19 @@ async function addComment(startupId) {
 }
 
 function formatDate(dateStr) {
+  if (!dateStr) return ''; // Обробка випадку, якщо дата відсутня
   const date = new Date(dateStr)
-  return date.toLocaleString()
+  return date.toLocaleString() // Це вже має працювати правильно, якщо з бекенду приходить aware UTC datetime
+}
+
+// Функція для отримання текстового опису статусу завдання
+function getTaskStatusText(status) {
+  // Ви можете розширити цей список відповідно до всіх можливих статусів
+  if (status === 'in_progress') return 'В роботі';
+  if (status === 'pending') return 'Очікує';
+  if (status === 'done') return 'Виконано';
+  if (status === 'paid') return 'Оплачено';
+  return status; // Повертаємо сам статус, якщо немає відповідного тексту
 }
 
 onMounted(fetchStartups)
@@ -173,8 +192,8 @@ async function toggleExpand(id) {
   } else {
     if (prev !== null) collapse(prev)
     expandedId.value = id
-    await fetchComments(id)
-    nextTick(() => expand(id))
+    await fetchComments(id) // Завантажуємо коментарі при розгортанні
+    await nextTick(() => expand(id)) // Розгортаємо опис
   }
 }
 
@@ -188,17 +207,16 @@ function expand(id) {
 function collapse(id) {
   const el = descriptionRefs.value[id]
   if (el) {
+    // Це потрібно для правильної анімації при швидких кліках
     el.style.height = el.scrollHeight + 'px'
-    void el.offsetHeight
+    void el.offsetHeight // Force reflow
     el.style.height = '0px'
   }
 }
 </script>
 
 <style scoped>
-/* ... (попередні стилі для .main-page, .content, .search-input, .startup-card, .title) ... */
-/* Залишаємо їх як є, якщо вони вас влаштовують */
-
+/* ... (попередні стилі для .main-page, .content, .search-input, .startup-card, .title і т.д.) ... */
 .main-page {
   padding: 2rem;
   padding-top: 100px;
@@ -268,23 +286,23 @@ function collapse(id) {
 .owner {
   font-size: 0.9rem;
   color: #b0b8c5;
-  margin-top: 1.2rem; /* Збільшено відступ, якщо є завдання */
-  margin-bottom: 1.2rem; /* Збільшено відступ перед коментарями */
+  margin-top: 1.2rem;
+  margin-bottom: 1.2rem;
   font-style: italic;
 }
 
 .description-wrapper {
   overflow: hidden;
   height: 0;
-  transition: height 0.5s ease-in-out; /* Збільшено тривалість для плавності */
+  transition: height 0.5s ease-in-out;
 }
 
 .description-wrapper.expanded {
-  margin-bottom: 1.5rem; /* Збільшено відступ, коли опис розгорнуто */
+  margin-bottom: 1.5rem;
 }
 
 .description-text {
-  padding-top: 0.5rem; /* Залишаємо, щоб текст не прилипав до верху при розгортанні */
+  padding-top: 0.5rem;
   color: #d5d8de;
   line-height: 1.6;
 }
@@ -304,7 +322,7 @@ function collapse(id) {
 
 .expand-toggle span {
   font-size: 1.6rem;
-  transition: transform 0.4s ease-in-out; /* Плавніший поворот стрілки */
+  transition: transform 0.4s ease-in-out;
   color: #a0a8b5;
   display: block;
 }
@@ -313,83 +331,70 @@ function collapse(id) {
   transform: rotate(180deg);
 }
 
-.additional-content {
-  /* margin-top: 0.5rem; /* Невеликий відступ зверху для всього блоку */
-  /* overflow: hidden; -- не потрібен, якщо анімуємо opacity/transform */
-}
-
-.slide-fade-enter-active,
-.slide-fade-leave-active {
-  transition: opacity 0.5s ease-in-out, transform 0.5s ease-in-out; /* Збільшено тривалість */
-}
-
-.slide-fade-enter-from,
-.slide-fade-leave-to {
-  opacity: 0;
-  transform: translateY(-15px); /* Починаємо трохи вище і "виїжджаємо" вниз */
-}
-
-.slide-fade-enter-to,
-.slide-fade-leave-from {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-/* Блок завдань */
-.additional-content h4 { /* Застосується до обох <h4> */
+.additional-content h4 {
   font-size: 1.1rem;
   font-weight: 600;
   color: #e0e1e6;
-  margin-top: 1.5rem; /* Відступ перед списком завдань/коментарів */
+  margin-top: 1.5rem;
   margin-bottom: 0.8rem;
 }
-.additional-content > h4:first-of-type { /* Перший H4 (Завдання:) */
-  margin-top: 0.5rem; /* Менший відступ, якщо це перший елемент в additional-content */
+.additional-content > h4:first-of-type {
+  margin-top: 0.5rem;
 }
 
-
 .task-list {
-  /* margin-top: 1rem; -- відступ тепер через h4 */
   padding-left: 0;
-  color: #c5c8ce;
   list-style-type: none;
 }
 
-.empty-message { /* Новий клас для повідомлень про відсутність даних */
-  font-style: italic;
-  color: #a0a8b5;
-  padding: 0.5rem 0;
-  font-size: 0.9rem;
-  /* margin-top: 0.5rem; */ /* Можна додати, якщо потрібно більше простору */
-}
-
-
-.task-list li {
+.task-list-item { /* Загальний стиль для елемента списку завдань */
   margin-bottom: 0.5rem;
   padding: 0.3rem 0;
 }
 
-.clickable-task a {
-  color: #90caf9;
+.task-link { /* Стиль для тексту завдання (посилання або span) */
+  color: #90caf9; /* Колір для клікабельних завдань */
   text-decoration: none;
   font-weight: 500;
   transition: color 0.2s ease;
 }
 
-.clickable-task a:hover {
-  color: #bbdefb;
+.task-list-item.non-clickable .task-link {
+  color: #78909c; /* Більш тьмяний колір для неклікабельних */
+  cursor: default; /* Показуємо, що елемент не клікабельний */
+}
+
+.task-list-item.non-clickable .task-link:hover {
+  text-decoration: none; /* Прибираємо підкреслення при наведенні для неклікабельних */
+  color: #78909c; /* Колір не змінюється */
+}
+
+.task-list-item:not(.non-clickable) .task-link:hover {
+  color: #bbdefb; /* Світліший колір при наведенні для клікабельних */
   text-decoration: underline;
 }
 
+.task-status-indicator { /* Стиль для тексту статусу завдання */
+  font-size: 0.85em;
+  font-style: italic;
+  margin-left: 8px;
+  color: #a0a8b5; /* Або інший колір, який вам подобається */
+}
+
+.empty-message {
+  font-style: italic;
+  color: #a0a8b5;
+  padding: 0.5rem 0;
+  font-size: 0.9rem;
+}
+
 .comments-section {
-  margin-top: 1.5rem; /* Відступ від блоку власника або завдань */
+  margin-top: 1.5rem;
   background: rgba(20, 15, 30, 0.5);
   padding: 1.2rem 1.5rem;
   border-radius: 12px;
   border-top: 1px solid rgba(255,255,255,0.08);
 }
-
-/* comments-section h4 - вже стилізовано вище */
 
 .comment-list {
   list-style: none;
@@ -460,5 +465,21 @@ function collapse(id) {
 
 .comment-button:hover {
   background-color: #005bb5;
+}
+
+/* Анімації (slide-fade) залишаються як є */
+.slide-fade-enter-active,
+.slide-fade-leave-active {
+  transition: opacity 0.5s ease-in-out, transform 0.5s ease-in-out;
+}
+.slide-fade-enter-from,
+.slide-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-15px);
+}
+.slide-fade-enter-to,
+.slide-fade-leave-from {
+  opacity: 1;
+  transform: translateY(0);
 }
 </style>

@@ -1,19 +1,17 @@
 import os
 import shutil
 import uuid
-from datetime import datetime, timedelta # Додано timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Any, Dict, Optional
 from fastapi import Path as FastApiPath
 from fastapi import APIRouter, Depends, HTTPException, Query, Form, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import insert, select, or_, update, func, desc
+from sqlalchemy import insert, select, or_, update, func, desc, delete # <--- ДОДАНО delete
 from starlette.responses import FileResponse
 
-# Переконайтеся, що User тут - це ваша Pydantic модель користувача від FastAPI Users
-# а user_table - це SQLAlchemy Table об'єкт
 from auth.database import get_async_session, User
 from models.models import chat, task, message
-from models.models import user as user_table # Імпортуємо таблицю user як user_table
+from models.models import user as user_table
 from fastapi_users import FastAPIUsers
 from auth.auth import auth_backend
 from auth.manager import get_user_manager
@@ -27,10 +25,9 @@ fastapi_users = FastAPIUsers[User, int](
     get_user_manager,
     [auth_backend],
 )
-# Директорія для збереження завантажених файлів чату
-# ВАЖЛИВО: Для продакшену використовуйте змінні середовища та розгляньте хмарні сховища (S3, GCS)
+
 UPLOAD_DIR = "./uploaded_chat_files"
-os.makedirs(UPLOAD_DIR, exist_ok=True) # Створюємо директорію, якщо її немає
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 async def get_current_active_user_and_update_last_seen(
     current_user_dependency: User = Depends(fastapi_users.current_user(active=True)),
@@ -82,10 +79,12 @@ async def create_chat_with_owner(
     existing_chat = await session.execute(select(chat.c.id).where(or_((chat.c.user1_id == customer_id) & (chat.c.user2_id == executor_id),(chat.c.user1_id == executor_id) & (chat.c.user2_id == customer_id))))
     chat_row = existing_chat.first()
     if chat_row: return {"chat_id": chat_row[0]}
-    new_chat = await session.execute(insert(chat).values(user1_id=customer_id,user2_id=executor_id,task_id=task_id,created_at=datetime.utcnow()).returning(chat.c.id))
+    new_chat_stmt = insert(chat).values(user1_id=customer_id,user2_id=executor_id,task_id=task_id,created_at=datetime.utcnow()).returning(chat.c.id)
+    new_chat_result = await session.execute(new_chat_stmt) # Змінено тут для отримання результату
     await session.commit()
-    chat_id = new_chat.scalar()
+    chat_id = new_chat_result.scalar_one() # Використовуємо scalar_one() для отримання ID
     return {"chat_id": chat_id}
+
 
 @router.get("/", response_model=List[Dict[str, Any]])
 async def get_user_chats(
@@ -103,7 +102,7 @@ async def get_user_chats(
         partner_id = chat_item_map["user1_id"] if chat_item_map["user2_id"] == current_user.id else chat_item_map["user2_id"]
         partner_details = await get_partner_details(partner_id, session)
         last_message_select = await session.execute(
-            select(message.c.content, message.c.created_at, message.c.sender_id, message.c.is_read, message.c.original_file_name) # Додано original_file_name для сніпета
+            select(message.c.content, message.c.created_at, message.c.sender_id, message.c.is_read, message.c.original_file_name)
             .where(message.c.chat_id == chat_item_map["id"])
             .order_by(message.c.created_at.desc()).limit(1)
         )
@@ -146,7 +145,7 @@ async def get_user_chats(
             "unread_messages_count": unread_messages_count,
         })
     chats_data.sort(
-        key=lambda x: datetime.fromisoformat(x["last_message_timestamp"].replace("Z", "+00:00")) if x["last_message_timestamp"] else datetime.min.replace(tzinfo=None),
+        key=lambda x: datetime.fromisoformat(x["last_message_timestamp"].replace("Z", "+00:00")) if x["last_message_timestamp"] else datetime.min.replace(tzinfo=timezone.utc),
         reverse=True
     )
     return chats_data
@@ -190,19 +189,17 @@ async def send_message_endpoint(
         original_filename_for_db = file.filename
         mime_type_for_db = file.content_type
         file_extension = os.path.splitext(original_filename_for_db)[1]
-        # Генеруємо унікальне ім'я файлу для зберігання на сервері
         unique_filename = f"{uuid.uuid4()}{file_extension}"
         server_file_path = os.path.join(UPLOAD_DIR, unique_filename)
-        file_path_in_db = unique_filename # Зберігаємо в БД тільки унікальне ім'я
+        file_path_in_db = unique_filename
 
         try:
             with open(server_file_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
         except Exception as e:
-            # Тут можна додати логування помилки
             raise HTTPException(status_code=500, detail=f"Не вдалося зберегти файл: {str(e)}")
         finally:
-            await file.close() # Завжди закриваємо файл
+            await file.close()
 
     new_msg_stmt = insert(message).values(
         chat_id=chat_id,
@@ -229,16 +226,13 @@ async def send_message_endpoint(
 
     file_url = None
     if msg_db_data["file_path"]:
-        # ВАЖЛИВО: Це URL для локального розгортання. Для продакшену потрібен інший підхід.
-        # Наприклад, request.url_for('get_chat_attachment', filename=msg_db_data["file_path"])
-        # Або URL з хмарного сховища.
         file_url = f"http://localhost:8000/chats/attachments/{msg_db_data['file_path']}"
 
 
     return {
         "id": msg_db_data["id"],
         "text": msg_db_data["content"],
-        "sender": "me", # Оскільки це відповідь на відправку поточним користувачем
+        "sender": "me",
         "created_at": created_at_iso,
         "is_read": msg_db_data["is_read"],
         "file_url": file_url,
@@ -262,17 +256,17 @@ async def get_messages_endpoint(
         select(
             message.c.id, message.c.content, message.c.sender_id,
             message.c.created_at, message.c.is_read,
-            message.c.file_path, message.c.original_file_name, message.c.mime_type # Додано поля файлів
+            message.c.file_path, message.c.original_file_name, message.c.mime_type
         )
-        .where(message.c.chat_id == chat_id).order_by(message.c.created_at.asc())
+        .where(message.c.chat_id == chat_id).order_by(message.c.created_at.asc()) # Змінено на .asc() для правильного порядку
         .offset(offset).limit(page_size)
     )
     db_messages_result = await session.execute(messages_query)
-    db_messages_rows = db_messages_result.fetchall() # Змінено ім'я змінної
+    db_messages_rows = db_messages_result.fetchall()
     if not db_messages_rows: return []
 
-    messages_response_data = [] # Змінено ім'я змінної
-    for msg_row_data in db_messages_rows: # Змінено ім'я змінної
+    messages_response_data = []
+    for msg_row_data in db_messages_rows:
         sender_type = "me" if msg_row_data.sender_id == current_user.id else "other"
         created_at_iso = (msg_row_data.created_at.isoformat() + "Z") if isinstance(msg_row_data.created_at, datetime) else str(msg_row_data.created_at)
 
@@ -292,31 +286,16 @@ async def get_messages_endpoint(
         })
     return messages_response_data
 
-# Ендпоінт для віддачі файлів
-# ВАЖЛИВО: Цей ендпоінт потребує належної АВТЕНТИФІКАЦІЇ та АВТОРИЗАЦІЇ
-# щоб файли могли завантажувати тільки авторизовані користувачі чату.
-# Поточна реалізація є базовою і НЕБЕЗПЕЧНОЮ для продакшену без цих перевірок.
 @router.get("/attachments/{filename:path}")
 async def get_chat_attachment(
     filename: str = FastApiPath(...),
-    # current_user: User = Depends(fastapi_users.current_user(active=True)) # Потрібно для перевірки доступу
-    # session: AsyncSession = Depends(get_async_session) # Потрібно для перевірки доступу
 ):
-    # Тут має бути логіка перевірки, чи має поточний користувач доступ до файлу 'filename'.
-    # Наприклад, знайти повідомлення з file_path == filename, перевірити chat_id,
-    # і чи є current_user учасником цього чату.
-
-    file_on_disk_path = os.path.join(UPLOAD_DIR, filename) # Змінено ім'я змінної
+    file_on_disk_path = os.path.join(UPLOAD_DIR, filename)
     if not os.path.isfile(file_on_disk_path):
         raise HTTPException(status_code=404, detail="Файл не знайдено")
-
-    # Можна спробувати отримати original_file_name з БД для Content-Disposition,
-    # але для простоти зараз FileResponse сам визначить ім'я з шляху.
-    # Або передати filename=original_filename_from_db (потребує запиту до БД)
-    return FileResponse(path=file_on_disk_path, filename=filename) # filename тут - це унікальне ім'я з UUID
+    return FileResponse(path=file_on_disk_path, filename=filename)
 
 
-# ... (існуючі ендпоінти mark_messages_as_read_endpoint, ping_user_online) ...
 @router.post("/{chat_id}/messages/read")
 async def mark_messages_as_read_endpoint(
     chat_id: int,
@@ -337,3 +316,37 @@ async def ping_user_online(
     current_user: User = Depends(get_current_active_user_and_update_last_seen)
 ):
     return {"status": "success", "message": f"User {current_user.id} pinged online."}
+
+# НОВИЙ ЕНДПОІНТ ДЛЯ ВИДАЛЕННЯ ЧАТУ
+@router.delete("/{chat_id}", status_code=200)
+async def delete_chat_endpoint(
+    chat_id: int,
+    session: AsyncSession = Depends(get_async_session),
+    current_user: User = Depends(get_current_active_user_and_update_last_seen),
+):
+    # 1. Отримати чат для перевірки існування та участі користувача
+    chat_select_stmt = select(chat).where(chat.c.id == chat_id)
+    chat_result = await session.execute(chat_select_stmt)
+    chat_to_delete = chat_result.mappings().first()
+
+    if not chat_to_delete:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    # 2. Перевірити, чи є поточний користувач учасником цього чату
+    if current_user.id not in [chat_to_delete["user1_id"], chat_to_delete["user2_id"]]:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this chat")
+
+    # 3. Видалити повідомлення, пов'язані з чатом
+    #    Це важливо, якщо ON DELETE CASCADE не встановлено для зовнішнього ключа в таблиці повідомлень.
+    #    Якщо встановлено, цей крок можна пропустити, оскільки БД зробить це автоматично.
+    delete_messages_stmt = delete(message).where(message.c.chat_id == chat_id)
+    await session.execute(delete_messages_stmt)
+
+    # 4. Видалити сам чат
+    delete_chat_stmt = delete(chat).where(chat.c.id == chat_id)
+    await session.execute(delete_chat_stmt)
+
+    # 5. Застосувати транзакцію
+    await session.commit()
+
+    return {"status": "success", "message": "Chat deleted successfully"}

@@ -58,7 +58,7 @@ chat = Table(
     "chats",
     metadata,
     Column("id", Integer, primary_key=True),
-    Column("task_id", Integer, ForeignKey("tasks.id"), nullable=False),
+    Column("task_id", Integer, ForeignKey("tasks.id"), nullable=True),
     Column("user1_id", Integer, ForeignKey("user.id"), nullable=False),  # замовник
     Column("user2_id", Integer, ForeignKey("user.id"), nullable=False),  # виконавець
     Column("created_at", TIMESTAMP, default=datetime.utcnow),

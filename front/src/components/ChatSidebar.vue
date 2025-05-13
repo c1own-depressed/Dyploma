@@ -4,52 +4,57 @@
 
     <div class="chat-list-wrapper">
       <div
-          v-for="chat in chats"
-          :key="chat.id"
-          @click="goToChat(chat.id)"
-          :class="['chat-preview', { 'active-chat': isActiveChat(chat.id) }]"
+          v-for="chatItem in chats" :key="chatItem.id"
+          @click="goToChat(chatItem.id)"
+          :class="['chat-preview', { 'active-chat': isActiveChat(chatItem.id) }]"
       >
         <div class="chat-info">
           <div class="chat-info-top-row">
             <div class="partner-info-wrapper">
-              <span class="partner-name">{{ chat.partner_name }}</span>
+              <span class="partner-name">{{ chatItem.partner_name }}</span>
               <span
-                  v-if="chat.partner_is_online !== undefined"
-                  :class="['online-status-indicator', chat.partner_is_online ? 'online' : 'offline']"
-                  :title="chat.partner_is_online ? 'Онлайн' : 'Офлайн'"
+                  v-if="chatItem.partner_is_online !== undefined"
+                  :class="['online-status-indicator', chatItem.partner_is_online ? 'online' : 'offline']"
+                  :title="chatItem.partner_is_online ? 'Онлайн' : 'Офлайн'"
               ></span>
             </div>
             <div class="top-row-right">
-              <span v-if="chat.last_message_sent_by_me && chat.last_message_snippet" class="read-status-icons">
-                <svg v-if="!chat.is_last_message_read_by_partner" class="read-receipt-single-gray" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+              <span v-if="chatItem.last_message_sent_by_me && chatItem.last_message_snippet" class="read-status-icons">
+                <svg v-if="!chatItem.is_last_message_read_by_partner" class="read-receipt-single-gray" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
                   <polyline points="2 8 5.5 11.5 14 4.5"></polyline>
                 </svg>
-                <svg v-if="chat.is_last_message_read_by_partner" class="read-receipt-double-blue" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+                <svg v-if="chatItem.is_last_message_read_by_partner" class="read-receipt-double-blue" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
                   <polyline points="2 8 5.5 11.5 14 4.5"></polyline>
                   <polyline points="7 8 10.5 11.5 19 4.5" transform="translate(-5,0)"></polyline>
                 </svg>
               </span>
-              <span v-if="chat.last_message_timestamp" class="last-message-time">
-                {{ formatChatTimestamp(chat.last_message_timestamp) }}
+              <span v-if="chatItem.last_message_timestamp" class="last-message-time">
+                {{ formatChatTimestamp(chatItem.last_message_timestamp) }}
               </span>
             </div>
           </div>
           <div class="chat-info-bottom-row">
-            <span class="last-message-snippet" :class="{ 'unread-snippet': chat.unread_messages_count > 0 && !chat.last_message_sent_by_me }">
-              {{ chat.last_message_snippet || 'Немає повідомлень' }}
+            <span class="last-message-snippet" :class="{ 'unread-snippet': chatItem.unread_messages_count > 0 && !chatItem.last_message_sent_by_me }">
+              {{ chatItem.last_message_snippet || 'Немає повідомлень' }}
             </span>
-            <span v-if="chat.unread_messages_count > 0" class="unread-badge">
-              {{ chat.unread_messages_count }}
+            <span v-if="chatItem.unread_messages_count > 0" class="unread-badge">
+              {{ chatItem.unread_messages_count }}
             </span>
           </div>
         </div>
+        <button
+            @click.stop="confirmDeleteChat(chatItem.id, chatItem.partner_name)"
+            class="delete-chat-button"
+            title="Видалити чат"
+        >
+          &times; </button>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'; // computed не використовується в цьому файлі
+import { ref, onMounted, onUnmounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import axios from 'axios';
 
@@ -77,8 +82,7 @@ const formatChatTimestamp = (timestamp) => {
   if (messageDate.toDateString() === today.toDateString()) {
     return timeString;
   } else if (messageDate.toDateString() === yesterday.toDateString()) {
-    // Для вчорашніх можна теж просто час, або "Вчора, ЧЧ:ХХ"
-    return timeString; // Або 'Вчора, ' + timeString;
+    return timeString;
   } else {
     const day = messageDate.getDate().toString().padStart(2, '0');
     const month = (messageDate.getMonth() + 1).toString().padStart(2, '0');
@@ -88,26 +92,53 @@ const formatChatTimestamp = (timestamp) => {
 
 const fetchChats = async () => {
   try {
-    const res = await axios.get('http://localhost:8000/chats/', { // Додано слеш в кінці
+    const res = await axios.get('http://localhost:8000/chats/', {
       headers: { Authorization: `Bearer ${jwt}` }
     });
-    // Перевіряємо чи дані змінилися, щоб уникнути непотрібних оновлень Vue
-    // Це проста перевірка, для складних даних може знадобитися глибше порівняння
     if (JSON.stringify(chats.value) !== JSON.stringify(res.data)) {
       chats.value = res.data;
     }
   } catch (e) {
     console.error('Не вдалося завантажити чати', e);
-    // Можна обробити помилки, наприклад, якщо токен недійсний (401), перенаправити на логін
     if (e.response && e.response.status === 401) {
-      router.push('/login'); // Або ваш шлях до сторінки логіну
+      router.push('/login');
+    }
+  }
+};
+
+const confirmDeleteChat = (chatId, partnerName) => {
+  if (window.confirm(`Ви впевнені, що хочете видалити чат з "${partnerName}"? Це видалить всю історію листування.`)) {
+    deleteChatOnBackend(chatId);
+  }
+};
+
+const deleteChatOnBackend = async (chatId) => {
+  try {
+    await axios.delete(`http://localhost:8000/chats/${chatId}`, {
+      headers: { Authorization: `Bearer ${jwt}` }
+    });
+    // Оновити список чатів локально
+    chats.value = chats.value.filter(chat => chat.id !== chatId);
+    // Якщо видалено активний чат, перенаправити
+    if (isActiveChat(chatId)) {
+      router.push('/chats'); // Або на головну, або на інший відповідний маршрут
+    }
+    // Можна додати сповіщення про успішне видалення
+    console.log(`Чат ${chatId} успішно видалено`);
+  } catch (e) {
+    console.error('Не вдалося видалити чат', e);
+    // Обробка помилок, наприклад, показати сповіщення користувачу
+    if (e.response && e.response.data && e.response.data.detail) {
+      alert(`Помилка видалення: ${e.response.data.detail}`);
+    } else {
+      alert('Не вдалося видалити чат. Спробуйте пізніше.');
     }
   }
 };
 
 onMounted(() => {
   fetchChats();
-  intervalId = setInterval(fetchChats, 2000);
+  intervalId = setInterval(fetchChats, 2000); // Розгляньте можливість використання WebSocket для оновлень в реальному часі
 });
 
 onUnmounted(() => {
@@ -161,13 +192,14 @@ function goHome() {
 .chat-preview {
   display: flex;
   align-items: center;
-  padding: 8px 12px;
+  padding: 8px 12px; /* Зменшено паддінг, щоб вмістити кнопку */
   margin: 0 8px;
   border-radius: 8px;
   cursor: pointer;
   transition: background-color 0.15s ease-in-out;
   min-height: 58px;
   box-sizing: border-box;
+  position: relative; /* Для позиціонування кнопки видалення */
 }
 .chat-preview:hover {
   background-color: #2b3745;
@@ -194,23 +226,22 @@ function goHome() {
   flex-direction: column;
   justify-content: center;
   overflow: hidden;
-  width: 100%;
+  width: calc(100% - 25px); /* Залишити місце для кнопки видалення */
 }
 
 .chat-info-top-row {
   display: flex;
   justify-content: space-between;
-  align-items: center; /* Змінено на center для кращого вирівнювання */
+  align-items: center;
   width: 100%;
 }
 
-/* Нова обгортка для імені та статусу */
 .partner-info-wrapper {
   display: flex;
   align-items: center;
-  overflow: hidden; /* Щоб ellipsis для імені працював */
-  flex-grow: 1; /* Дозволяє зайняти доступний простір */
-  margin-right: 8px; /* Відступ від правого блоку (час, іконки) */
+  overflow: hidden;
+  flex-grow: 1;
+  margin-right: 8px;
 }
 
 .partner-name {
@@ -220,34 +251,32 @@ function goHome() {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  /* flex-grow: 1; -- тепер не потрібно, бо є обгортка */
 }
 .chat-preview.active-chat .partner-name {
   color: #ffffff;
 }
 
-/* Стилі для індикатора онлайн статусу */
 .online-status-indicator {
-  width: 9px; /* Трохи більше для видимості */
+  width: 9px;
   height: 9px;
   border-radius: 50%;
-  margin-left: 7px; /* Відступ від імені */
-  flex-shrink: 0; /* Щоб не стискався */
+  margin-left: 7px;
+  flex-shrink: 0;
   display: inline-block;
-  border: 1px solid #17212b; /* Маленька рамка кольору фону для кращого вигляду */
+  border: 1px solid #17212b;
 }
 .online-status-indicator.online {
-  background-color: #e2a9fd; /* Зелений */
+  background-color: #e2a9fd;
 }
 .chat-preview.active-chat .online-status-indicator.online {
-  background-color: #a5d6a7; /* Світліший зелений на синьому фоні */
+  background-color: #a5d6a7;
   border-color: #4082c3;
 }
 .online-status-indicator.offline {
-  background-color: #7f8c9a; /* Сірий */
+  background-color: #7f8c9a;
 }
 .chat-preview.active-chat .online-status-indicator.offline {
-  background-color: #aeb8c2; /* Світліший сірий на синьому фоні */
+  background-color: #aeb8c2;
   border-color: #4082c3;
 }
 
@@ -255,7 +284,7 @@ function goHome() {
 .top-row-right {
   display: flex;
   align-items: center;
-  flex-shrink: 0; /* Щоб не стискався */
+  flex-shrink: 0;
 }
 
 .chat-info-bottom-row {
@@ -316,12 +345,46 @@ function goHome() {
   text-align: center;
   line-height: 15px;
   flex-shrink: 0;
-  margin-left: auto;
+  margin-left: auto; /* Змінено, щоб значок був праворуч, якщо кнопка видалення невидима */
 }
 .chat-preview.active-chat .unread-badge {
   background-color: #ffffff;
   color: #4082c3;
 }
+
+/* Стилі для кнопки видалення */
+.delete-chat-button {
+  background: none;
+  border: none;
+  color: #6c7883;
+  font-size: 20px;
+  line-height: 1;
+  padding: 0 5px;
+  cursor: pointer;
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  /* Тимчасово робимо більш значний зсув для перевірки */
+  transform: translateY(calc(-50% + 10px)); /* Збільшено зсув до 10px */
+  opacity: 0;
+  transition: opacity 0.2s ease-in-out, color 0.2s ease-in-out;
+}
+.chat-preview:hover .delete-chat-button {
+  opacity: 1; /* Показати при наведенні на .chat-preview */
+}
+
+.delete-chat-button:hover {
+  color: #e53e3e; /* Червоний колір при наведенні на кнопку */
+}
+
+.chat-preview.active-chat .delete-chat-button {
+  color: #d1d5db; /* Колір на активному чаті */
+  opacity: 1; /* Завжди видима на активному чаті, якщо бажаєте */
+}
+.chat-preview.active-chat .delete-chat-button:hover {
+  color: #ffaaaa; /* Світліший червоний на активному чаті */
+}
+
 
 .chat-list-wrapper::-webkit-scrollbar { width: 6px; }
 .chat-list-wrapper::-webkit-scrollbar-track { background: transparent; margin: 4px 0; }

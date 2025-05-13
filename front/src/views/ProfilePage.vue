@@ -29,7 +29,6 @@
       <p v-if="user.rating !== null && user.rating !== undefined">
         <strong>Рейтинг:</strong> {{ user.rating }}
       </p>
-
     </div>
 
     <div class="tabs">
@@ -41,73 +40,61 @@
       <div v-if="activeTab === 'startups'">
         <h2>Мої стартапи</h2>
         <button class="create-startup-btn" @click="createStartup">+ Створити стартап</button>
-
         <ul v-if="startups.length">
-          <li v-for="startupItem in startups" :key="startupItem.id" class="task-item"> <div class="task-header" @click="toggleExpand('startup', startupItem.id)">
-            <div class="task-title centered-title">{{ startupItem.name }}</div>
-            <span class="expand-toggle">{{ expandedIds.startups[startupItem.id] ? '▲' : '▼' }}</span>
-          </div>
-
+          <li v-for="startupItem in startups" :key="startupItem.id" class="task-item">
+            <div class="task-header" @click="toggleExpand('startup', startupItem.id)">
+              <div class="task-title centered-title">{{ startupItem.name }}</div>
+              <span class="expand-toggle">{{ expandedIds.startups[startupItem.id] ? '▲' : '▼' }}</span>
+            </div>
             <transition name="expand">
-              <div
-                  v-show="expandedIds.startups[startupItem.id]"
-                  class="task-details expandable"
-              >
+              <div v-show="expandedIds.startups[startupItem.id]" class="task-details expandable">
                 <p>{{ startupItem.description }}</p>
                 <h4>Завдання:</h4>
                 <ul v-if="startupItem.tasks && startupItem.tasks.length">
-                  <li v-for="taskItem in startupItem.tasks" :key="taskItem.id"> <div class="task-toggle" @click="toggleExpand('task', taskItem.id)">
-                    <span class="task-title-text">{{ taskItem.title }}</span>
-                    <span class="expand-toggle">{{ expandedIds.tasks[taskItem.id] ? '▲' : '▼' }}</span>
-                  </div>
-
+                  <li v-for="taskItem in startupItem.tasks" :key="taskItem.id">
+                    <div class="task-toggle" @click="toggleExpand('task', taskItem.id)">
+                      <span class="task-title-text">{{ taskItem.title }}</span>
+                      <span class="expand-toggle">{{ expandedIds.tasks[taskItem.id] ? '▲' : '▼' }}</span>
+                    </div>
                     <transition name="expand">
-                      <div
-                          v-show="expandedIds.tasks[taskItem.id]"
-                          class="task-details expandable"
-                      >
+                      <div v-show="expandedIds.tasks[taskItem.id]" class="task-details expandable">
                         <p>{{ taskItem.description }}</p>
                         <p>Статус: {{ getStatusText(taskItem.status) }}</p>
-
-                        <button
-                            v-if="taskItem.status !== 'in_progress' && taskItem.status !== 'paid'"
-                            class="edit-btn"
-                            @click.stop="editTask(taskItem.id)"
-                        >
-                          Редагувати
-                        </button>
-
-                        <button
-                            v-if="taskItem.status === 'paid'"
-                            class="complete-btn"
-                            @click.stop="viewTaskResult(taskItem.id)"
-                        >
-                          Переглянути результат
-                        </button>
-
-                        <button
-                            v-if="taskItem.status === 'in_progress'"
-                            class="remove-executor-btn"
-                            @click.stop="removeExecutorByOwner(taskItem.id)"
-                        >
-                          Відключити виконавця
-                        </button>
-
+                        <button v-if="taskItem.status !== 'in_progress' && taskItem.status !== 'paid'" class="edit-btn" @click.stop="editTask(taskItem.id)">Редагувати</button>
+                        <button v-if="taskItem.status === 'paid'" class="complete-btn" @click.stop="viewTaskResult(taskItem.id)">Переглянути результат</button>
+                        <button v-if="taskItem.status === 'in_progress'" class="remove-executor-btn" @click.stop="removeExecutorByOwner(taskItem.id)">Відключити виконавця</button>
                       </div>
                     </transition>
                   </li>
                 </ul>
                 <p v-else>Немає завдань</p>
 
-                <button class="complete-btn" @click.stop="editStartup(startupItem.id)">Редагувати</button>
-                <button class="edit-btn" @click.stop="createTask(startupItem.id)">+ Додати завдання</button>
+                <div class="startup-actions">
+                  <button class="complete-btn" @click.stop="editStartup(startupItem.id)">Редагувати стартап</button>
+                  <button class="edit-btn" @click.stop="createTask(startupItem.id)">+ Додати завдання</button>
+                </div>
+
+                <h4 class="comments-heading">Коментарі до стартапу:</h4>
+                <ul v-if="startupItem.comments && startupItem.comments.length" class="startup-comments-list">
+                  <li v-for="commentEntry in startupItem.comments" :key="commentEntry.id" class="comment-entry">
+                    <div class="comment-entry-header">
+                      <strong class="comment-author">{{ commentEntry.author_username }}</strong>
+                      <div class="comment-meta-and-actions">
+                        <span class="comment-date-small">{{ new Date(commentEntry.created_at).toLocaleString() }}</span>
+                        <button @click.stop="confirmDeleteStartupComment(startupItem.id, commentEntry.id)" class="delete-comment-icon" title="Видалити коментар">
+                          &#x2715; </button>
+                      </div>
+                    </div>
+                    <p class="comment-text-small">{{ commentEntry.text }}</p>
+                  </li>
+                </ul>
+                <p v-else class="no-comments-text">До цього стартапу ще немає коментарів.</p>
               </div>
             </transition>
           </li>
         </ul>
         <p v-else>Немає стартапів.</p>
       </div>
-
 
       <div v-if="activeTab === 'tasks'">
         <h2>Активні завдання</h2>
@@ -160,16 +147,17 @@
 
 <script setup>
 import Navbar from '../components/Navbar.vue'
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import axios from 'axios'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
 const user = ref({ username: '', email: '', rating: null })
-const startups = ref([])
+const startups = ref([]) // Тепер startups будуть містити коментарі
 const tasks = ref([])
+// const userComments = ref([]) // Цей ref більше не потрібен, якщо немає окремої вкладки
 const activeTab = ref('startups')
-const expandedIds = ref({ startups: {}, tasks: {} })
+const expandedIds = ref({ startups: {}, tasks: {} }) // Для розгортання стартапів та їхніх завдань
 const jwt = localStorage.getItem('jwtToken')
 
 const fetchProfile = async () => {
@@ -183,27 +171,51 @@ const fetchProfile = async () => {
   }
 }
 
+// fetchStartups тепер завантажує стартапи з їхніми завданнями та коментарями
 const fetchStartups = async () => {
   try {
-    const res = await axios.get('http://localhost:8000/user/startups', {
+    const res = await axios.get('http://localhost:8000/user/startups', { // Ендпоінт тепер повертає і коментарі
       headers: { Authorization: `Bearer ${jwt}` }
     })
-    startups.value = res.data
+    startups.value = res.data.map(startup => ({
+      ...startup,
+      // Переконуємося, що tasks та comments ініціалізовані як масиви, якщо вони можуть бути відсутні
+      tasks: startup.tasks || [],
+      comments: startup.comments || []
+    }));
+    // Ініціалізуємо expandedIds для нових стартапів, якщо потрібно (щоб уникнути помилок)
+    startups.value.forEach(s => {
+      if (expandedIds.value.startups[s.id] === undefined) {
+        expandedIds.value.startups[s.id] = false;
+      }
+      s.tasks.forEach(t => {
+        if (expandedIds.value.tasks[t.id] === undefined) {
+          expandedIds.value.tasks[t.id] = false;
+        }
+      });
+    });
   } catch (e) {
-    console.error('Помилка при завантаженні стартапів', e)
+    console.error('Помилка при завантаженні стартапів з коментарями', e)
   }
 }
 
-const fetchTasks = async () => {
+const fetchTasks = async () => { // Для вкладки "Активні завдання"
   try {
     const res = await axios.get('http://localhost:8000/user/tasks', {
       headers: { Authorization: `Bearer ${jwt}` }
     })
-    tasks.value = res.data
+    tasks.value = res.data;
+    tasks.value.forEach(t => {
+      if (expandedIds.value.tasks[t.id] === undefined) {
+        expandedIds.value.tasks[t.id] = false;
+      }
+    });
   } catch (e) {
     console.error('Помилка при завантаженні завдань', e)
   }
 }
+
+// Функція fetchUserComments більше не потрібна, якщо немає окремої вкладки
 
 const getStatusText = (status) => {
   if (status === 'in_progress') return 'Очікує на виконання!'
@@ -221,102 +233,204 @@ const toggleExpand = (type, id) => {
   }
 }
 
-const markTaskAsCompleted = (taskId) => {
-  router.push({ name: 'CompleteTask', params: { taskId } })
-}
-
+// --- Функції для навігації та дій з завданнями/стартапами (залишаються) ---
+const markTaskAsCompleted = (taskId) => router.push({ name: 'CompleteTask', params: { taskId } });
 const markTaskAsPaid = async (taskId) => {
   try {
-    await axios.put(
-        `http://localhost:8000/user/tasks/${taskId}/status`,
-        { status: 'paid' },
-        { headers: { Authorization: `Bearer ${jwt}` } }
-    )
-    await fetchTasks() // Оновити список після змін
-  } catch (e) {
-    console.error('Не вдалося оновити статус на paid', e)
-  }
-}
+    await axios.put(`http://localhost:8000/user/tasks/${taskId}/status`, { status: 'paid' }, { headers: { Authorization: `Bearer ${jwt}` } });
+    await fetchTasks();
+  } catch (e) { console.error('Не вдалося оновити статус на paid', e); }
+};
+const createStartup = () => router.push('/create-startup');
+const editStartup = (startupId) => router.push(`/edit-startup/${startupId}`);
+const createTask = (startupId) => router.push(`/create-task?startup_id=${startupId}`);
+const editTask = (taskId) => router.push(`/edit-task/${taskId}`);
+const viewTaskResult = (taskId) => router.push(`/task-result/${taskId}`);
 
-const createStartup = () => {
-  router.push('/create-startup')
-}
-
-const editStartup = (startupId) => {
-  router.push(`/edit-startup/${startupId}`)
-}
-
-const createTask = (startupId) => {
-  router.push(`/create-task?startup_id=${startupId}`)
-}
-
-const editTask = (taskId) => {
-  router.push(`/edit-task/${taskId}`)
-}
-
-const viewTaskResult = (taskId) => {
-  router.push(`/task-result/${taskId}`)
-}
 const fetchUserRating = async () => {
   try {
-    const res = await axios.get('http://localhost:8000/user/rating', {
-      headers: { Authorization: `Bearer ${jwt}` }
-    })
-    console.log('Рейтинг отримано:', res.data.rating); // Додайте цей рядок для перевірки
-    user.value.rating = res.data.average_rating
+    const res = await axios.get('http://localhost:8000/user/rating', { headers: { Authorization: `Bearer ${jwt}` } });
+    user.value.rating = res.data.average_rating;
+  } catch (e) { console.error('Не вдалося отримати рейтинг', e); }
+};
 
-  } catch (e) {
-    console.error('Не вдалося отримати рейтинг', e)
-  }
-}
 const refuseTask = async (taskId) => {
+  if (!confirm('Ви впевнені, що хочете відмовитися від цього завдання?')) return;
   try {
-    // Запит на новий ендпоінт для відмови від завдання
-    await axios.put(
-        `http://localhost:8000/user/tasks/${taskId}/refuse`,
-        {}, // Тіло запиту може бути порожнім, якщо дані не потрібні
-        { headers: { Authorization: `Bearer ${jwt}` } }
-    );
-    // Оновити список активних завдань (завдання має зникнути зі списку)
+    await axios.put(`http://localhost:8000/user/tasks/${taskId}/refuse`, {}, { headers: { Authorization: `Bearer ${jwt}` } });
     await fetchTasks();
-    // Тут можна додати сповіщення для користувача (наприклад, alert або через систему нотифікацій)
-    // alert('Ви успішно відмовилися від завдання.');
+    alert('Ви успішно відмовилися від завдання.');
   } catch (e) {
     console.error('Не вдалося відмовитися від завдання', e);
-    // Обробка помилки, сповіщення користувача
-    // alert(`Помилка при відмові від завдання: ${e.response?.data?.detail || e.message}`);
+    alert(`Помилка при відмові від завдання: ${e.response?.data?.detail || e.message}`);
   }
 };
+
 const removeExecutorByOwner = async (taskId) => {
-  // Можна додати запит на підтвердження дії
-  // if (!confirm('Ви впевнені, що хочете відключити виконавця від цього завдання?')) {
-  //   return;
-  // }
+  if (!confirm('Ви впевнені, що хочете відключити виконавця від цього завдання?')) return;
   try {
-    await axios.put(
-        `http://localhost:8000/user/startups/tasks/${taskId}/remove-executor`,
-        {}, // Тіло запиту не потрібне
-        { headers: { Authorization: `Bearer ${jwt}` } }
-    );
-    // Оновити список стартапів, щоб відобразити зміни в завданнях
-    await fetchStartups();
-    // alert('Виконавця успішно відключено, завдання переведено в статус "Очікує на виконавця".');
+    await axios.put(`http://localhost:8000/user/startups/tasks/${taskId}/remove-executor`, {}, { headers: { Authorization: `Bearer ${jwt}` } });
+    await fetchStartups(); // Оновлюємо стартапи, оскільки статус завдання змінився
+    alert('Виконавця успішно відключено.');
   } catch (e) {
     console.error('Не вдалося відключити виконавця:', e);
-    // alert(`Помилка при відключенні виконавця: ${e.response?.data?.detail || e.message}`);
+    alert(`Помилка при відключенні виконавця: ${e.response?.data?.detail || e.message}`);
   }
 };
+
+const deleteStartupComment = async (startupId, commentId) => {
+  try {
+    // Додаємо префікс /user/ до URL
+    await axios.delete(`http://localhost:8000/user/startups/${startupId}/comments/${commentId}`, {
+      headers: { Authorization: `Bearer ${jwt}` }
+    });
+    await fetchStartups(); // Перезавантажуємо стартапи, щоб оновити список коментарів
+    alert('Коментар до стартапу успішно видалено.');
+  } catch (e) {
+    console.error('Помилка при видаленні коментаря стартапу', e);
+    // Більш детальне повідомлення про помилку для діагностики
+    if (e.response) {
+      alert(`Помилка видалення: ${e.response.status} - ${e.response.data.detail || e.message}`);
+    } else {
+      alert(`Помилка мережі або запиту: ${e.message}`);
+    }
+  }
+};
+
+const confirmDeleteStartupComment = (startupId, commentId) => {
+  if (confirm('Ви впевнені, що хочете видалити цей коментар зі стартапу?')) {
+    deleteStartupComment(startupId, commentId);
+  }
+};
+
+// Стара функція deleteComment (якщо була для окремої вкладки "Мої коментарі") тепер не потрібна
+
+// Слідкуємо за зміною активної вкладки для завантаження відповідних даних
+watch(activeTab, (newTab, oldTab) => {
+  if (newTab === 'startups' && startups.value.length === 0) { // Завантажуємо стартапи, якщо їх ще немає
+    fetchStartups();
+  } else if (newTab === 'tasks' && tasks.value.length === 0) { // Завантажуємо завдання, якщо їх ще немає
+    fetchTasks();
+  }
+  // Логіка для вкладки "comments" видалена, якщо вкладка прибрана
+});
+
 onMounted(() => {
-  fetchProfile()
-  fetchStartups()
-  fetchTasks()
-  fetchUserRating()
-})
+  fetchProfile();
+  fetchUserRating();
+  // Завантажуємо дані для активної вкладки за замовчуванням
+  if (activeTab.value === 'startups') {
+    fetchStartups();
+  } else if (activeTab.value === 'tasks') {
+    fetchTasks();
+  }
+});
+
 </script>
 
 <style scoped>
-/* ... (всі ваші попередні стилі для .profile-page, .user-info, .tabs, .task-item, кнопок і т.д. ЗАЛИШАЮТЬСЯ ЯК Є) ... */
+/* Стилі для розділу коментарів всередині стартапу */
+.startup-actions { /* Обгортка для кнопок "Редагувати стартап" та "+ Додати завдання" */
+  margin-top: 1.5rem; /* Відступ зверху перед кнопками */
+  display: flex;
+  justify-content: center; /* Додано для центрування по горизонталі */
+  gap: 0.8rem; /* Відстань між кнопками */
+  flex-wrap: wrap; /* Дозволяє кнопкам переноситися, якщо не вистачає місця */
+  margin-bottom: 1rem; /* Відступ знизу, перед заголовком коментарів */
+}
 
+.comments-heading {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #d5d8de;
+  /* margin-top: 1.5rem;  Цей відступ тепер регулюється margin-bottom від .startup-actions */
+  margin-bottom: 0.8rem;
+  padding-top: 0.8rem; /* Можна залишити для внутрішнього відступу, якщо потрібен */
+  border-top: 1px solid rgba(255, 255, 255, 0.1); /* Лінія-розділювач */
+}
+
+.startup-comments-list {
+  list-style: none;
+  padding-left: 0;
+  margin-top: 0.5rem;
+}
+
+.comment-entry {
+  background-color: rgba(255, 255, 255, 0.03);
+  padding: 0.8rem 1rem;
+  border-radius: 8px;
+  margin-bottom: 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.comment-entry-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.comment-author {
+  font-weight: 600;
+  color: #c8c9ce;
+  font-size: 0.95rem;
+  margin-right: auto; /* Щоб ім'я автора займало доступний простір зліва */
+}
+
+.comment-meta-and-actions { /* Нова обгортка для дати та кнопки видалення */
+  display: flex;
+  align-items: center;
+  gap: 0.75rem; /* Проміжок між датою та хрестиком */
+  margin-left: 0.5rem; /* Невеликий відступ зліва від імені автора */
+}
+
+.comment-date-small {
+  font-size: 0.8rem;
+  color: #8a8f9c;
+}
+
+.delete-comment-icon { /* Стиль для іконки-хрестика */
+  background: none;
+  border: none;
+  color: #e74c3c; /* Червоний колір, як у кнопки "Відмовитися" */
+  font-size: 1.2rem; /* Розмір хрестика */
+  font-weight: bold;
+  cursor: pointer;
+  padding: 0.1rem 0.3rem; /* Невеликий паддінг для зручності кліку */
+  line-height: 1; /* Для кращого вертикального вирівнювання */
+  transition: color 0.2s ease;
+}
+
+.delete-comment-icon:hover {
+  color: #c0392b; /* Темніший червоний при наведенні */
+}
+
+.comment-text-small {
+  font-size: 0.9rem;
+  color: #b0b3b8;
+  line-height: 1.5;
+  margin-bottom: 0.3rem; /* Зменшив відступ, оскільки кнопка тепер не текстова */
+  white-space: pre-wrap;
+}
+
+/* Стиль для старої кнопки видалення, якщо вона ще десь використовується, або можна видалити */
+/*
+.delete-comment-btn-small {
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  margin-top: 0.3rem;
+  align-self: flex-end;
+}
+*/
+
+.no-comments-text {
+  color: #a0a8b5;
+  font-style: italic;
+  margin-top: 0.5rem;
+  padding-left: 0.5rem;
+}
+
+/* ... (решта ваших стилів) ... */
 .profile-page {
   padding: 2rem;
   padding-top: 80px; /* Відступ для Navbar */
@@ -333,7 +447,6 @@ onMounted(() => {
   width: 100%;
 }
 
-/* Заголовок сторінки */
 .Profile123 {
   font-size: 2.2rem;
   font-weight: 600;
@@ -354,14 +467,14 @@ onMounted(() => {
   border: 1px solid rgba(255, 255, 255, 0.12);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
   width: 100%;
-  max-width: 240px; /* У вашому коді було 240px, якщо це ок, залишаємо */
-  text-align: center; /* Текст всередині user-info буде по центру */
+  max-width: 240px;
+  text-align: center;
 }
 
 .user-info p {
   display: flex;
   align-items: center;
-  justify-content: center; /* Для центрування іконки та тексту, якщо text-align:center у батька */
+  justify-content: center;
   font-size: 1rem;
   margin-bottom: 0.8rem;
   color: #e0e1e6;
@@ -435,7 +548,7 @@ onMounted(() => {
   width: 100%;
 }
 
-.task-item {
+.task-item { /* Загальний стиль для елементів списку, включаючи коментарі */
   background: rgba(35, 30, 50, 0.6);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
@@ -459,11 +572,13 @@ onMounted(() => {
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   margin-bottom: 1rem;
 }
-.task-item ul .task-toggle {
+.task-item ul .task-toggle { /* Стилі для списку завдань всередині стартапу */
   border-top: 1px solid rgba(255,255,255,0.05);
   margin-top: 0.5rem;
+  padding: 0.5rem 0; /* Додав padding для консистентності */
+  margin-bottom: 0.5rem; /* Додав margin-bottom */
 }
-.task-item > .task-header {
+.task-item > .task-header { /* Стилі для заголовку самого стартапу */
   padding-top: 0;
   margin-bottom: 1rem;
 }
@@ -478,45 +593,40 @@ onMounted(() => {
   text-align: center;
   font-size: 1.2rem;
 }
-.task-title-text {
-  margin-left: 0;
+.task-title-text { /* Назва завдання всередині стартапу */
+  margin-left: 0; /* Прибираємо відступ, якщо є */
   white-space: normal;
+  font-size: 1rem; /* Трохи менше, ніж назва стартапу */
 }
 
 .expand-toggle {
   font-size: 1.3rem;
   color: #a0a8b5;
   padding: 0.3rem;
-  transition: transform 0.4s ease-in-out; /* Збільшено тривалість для стрілки */
+  transition: transform 0.4s ease-in-out;
 }
-/* .task-header .expand-toggle, .task-toggle .expand-toggle {
-  transform: translateY(0);
-} */
-/* Цей блок вище не потрібен, якщо ви просто змінюєте текст стрілки ▲/▼ */
-/* Якщо ви використовуєте CSS для обертання стрілки, тоді клас .rotated потрібен */
 
-
-.task-details {
-  padding-top: 0.8rem; /* Збільшено для кращого ефекту при розгортанні */
+.task-details { /* Для розгорнутого контенту стартапу та завдання */
+  padding-top: 0.8rem;
   color: #c5c8ce;
   line-height: 1.6;
 }
 .task-details p {
   margin: 0.6rem 0;
 }
-.task-details h4 {
+.task-details h4 { /* Заголовок "Завдання:" всередині стартапу */
   font-size: 1rem;
   font-weight: 600;
   color: #d5d8de;
   margin-top: 1.2rem;
   margin-bottom: 0.5rem;
 }
-.task-details ul {
-  padding-left: 1rem;
+.task-details ul { /* Список завдань або коментарів */
+  padding-left: 1rem; /* Відступ для вкладених списків */
   margin-top: 0.5rem;
 }
-.task-details ul li {
-  background: transparent;
+.task-details ul li { /* Елемент завдання або коментаря в списку */
+  background: transparent; /* Прозорий фон, якщо не перевизначено */
   padding: 0.3rem 0;
   border-radius: 0;
   margin-bottom: 0.3rem;
@@ -524,8 +634,8 @@ onMounted(() => {
   border: none;
 }
 
-/* Кнопки дій */
-.create-startup-btn, .edit-btn, .complete-btn {
+
+.create-startup-btn, .edit-btn, .complete-btn, .refuse-btn, .remove-executor-btn {
   padding: 0.7rem 1.3rem;
   border: none;
   border-radius: 8px;
@@ -536,14 +646,19 @@ onMounted(() => {
   margin-right: 0.8rem;
   margin-top: 1rem;
 }
-.task-details button:last-child {
+/* Останній кнопці в блоці прибираємо правий відступ */
+.startup-actions button:last-child { /* Застосовуємо до кнопок всередині .startup-actions */
   margin-right: 0;
 }
+.comment-entry button:last-child { /* Це для кнопки-хрестика, якщо вона буде останньою, але вона єдина */
+  margin-right: 0;
+}
+
 
 .create-startup-btn {
   background-color: #007aff;
   color: #ffffff;
-  display: block;
+  display: block; /* Щоб margin auto працював */
   margin-left: auto;
   margin-right: auto;
   margin-bottom: 1.5rem;
@@ -553,8 +668,8 @@ onMounted(() => {
   box-shadow: 0 2px 8px rgba(0, 123, 255, 0.4);
 }
 
-.edit-btn {
-  background-color: rgba(147, 38, 198, 0.7);
+.edit-btn { /* Кнопка "Редагувати", "+ Додати завдання" */
+  background-color: rgba(147, 38, 198, 0.7); /* Фіолетовий */
   color: #ffffff;
 }
 .edit-btn:hover {
@@ -562,9 +677,9 @@ onMounted(() => {
   box-shadow: 0 2px 8px rgba(147, 38, 198, 0.4);
 }
 
-.complete-btn {
+.complete-btn { /* Кнопка "Виконати", "Переглянути результат", "Редагувати стартап" */
   background-color: transparent;
-  color: #82ddf0;
+  color: #82ddf0; /* Світло-блакитний */
   border: 1px solid #82ddf0;
 }
 .complete-btn:hover {
@@ -572,8 +687,8 @@ onMounted(() => {
   border-color: #a0e5f3;
   box-shadow: 0 2px 8px rgba(130, 221, 240, 0.3);
 }
-.complete-btn.paid-style {
-  border-color: #5cb85c;
+.complete-btn.paid-style { /* Для кнопки "Відправити замовнику" коли статус paid */
+  border-color: #5cb85c; /* Зелений */
   color: #5cb85c;
 }
 .complete-btn.paid-style:hover {
@@ -582,67 +697,46 @@ onMounted(() => {
   box-shadow: 0 2px 8px rgba(92, 184, 92, 0.3);
 }
 
-/* ОНОВЛЕНІ СТИЛІ АНІМАЦІЇ */
+.refuse-btn { /* Кнопка "Відмовитися" (якщо окрема) */
+  background-color: #e74c3c; /* Червоний */
+  color: white;
+}
+.refuse-btn:hover {
+  background-color: #c0392b; /* Темніший червоний */
+  box-shadow: 0 2px 8px rgba(231, 76, 60, 0.4);
+}
+.remove-executor-btn { /* Кнопка "Відключити виконавця" */
+  background-color: #e67e22; /* Помаранчевий */
+  color: white;
+}
+.remove-executor-btn:hover {
+  background-color: #d35400; /* Темніший помаранчевий */
+  box-shadow: 0 2px 8px rgba(230, 126, 34, 0.4);
+}
+
+
 .expandable {
   overflow: hidden;
 }
 .expand-enter-active,
 .expand-leave-active {
   transition: max-height 0.5s cubic-bezier(0.4, 0, 0.2, 1),
-  opacity 0.45s cubic-bezier(0.4, 0, 0.2, 1) 0.05s, /* Opacity анімується з невеликою затримкою */
+  opacity 0.45s cubic-bezier(0.4, 0, 0.2, 1) 0.05s,
   padding-top 0.5s cubic-bezier(0.4, 0, 0.2, 1),
   padding-bottom 0.5s cubic-bezier(0.4, 0, 0.2, 1),
   margin-top 0.5s cubic-bezier(0.4, 0, 0.2, 1),
   margin-bottom 0.5s cubic-bezier(0.4, 0, 0.2, 1);
   max-height: 1000px; /* Або більше, якщо контент може бути дуже високим */
   opacity: 1;
-  /* padding-top та padding-bottom будуть взяті з .task-details або встановлені тут */
 }
 
 .expand-enter-from,
 .expand-leave-to {
   max-height: 0;
   opacity: 0;
-  padding-top: 0 !important; /* !important для перевизначення, якщо є конфлікти */
+  padding-top: 0 !important;
   padding-bottom: 0 !important;
   margin-top: 0 !important;
   margin-bottom: 0 !important;
-  /* Сюди можна додати інші властивості, які мають анімуватися до 0, наприклад, border-width */
-}
-.refuse-btn {
-  background-color: #e74c3c; /* Червоний колір */
-  color: white;
-  padding: 0.7rem 1.3rem;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: 500;
-  font-size: 0.9rem;
-  transition: background-color 0.2s ease, box-shadow 0.2s ease;
-  margin-right: 0.8rem;
-  margin-top: 1rem;
-}
-
-.refuse-btn:hover {
-  background-color: #c0392b; /* Темніший червоний при наведенні */
-  box-shadow: 0 2px 8px rgba(231, 76, 60, 0.4);
-}
-.remove-executor-btn {
-  background-color: #e67e22; /* Наприклад, помаранчевий */
-  color: white;
-  padding: 0.7rem 1.3rem;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: 500;
-  font-size: 0.9rem;
-  transition: background-color 0.2s ease, box-shadow 0.2s ease;
-  margin-right: 0.8rem;
-  margin-top: 1rem;
-}
-
-.remove-executor-btn:hover {
-  background-color: #d35400; /* Темніший помаранчевий */
-  box-shadow: 0 2px 8px rgba(230, 126, 34, 0.4);
 }
 </style>
