@@ -46,29 +46,48 @@
           </div>
         </div>
         <button
-            @click.stop="confirmDeleteChat(chatItem.id, chatItem.partner_name)"
-            class="delete-chat-button"
+            @click.stop="openDeleteChatModal(chatItem)" class="delete-chat-button"
             title="Видалити чат"
         >
           &times; </button>
       </div>
     </div>
+
+    <div v-if="showChatDeleteConfirmModal" class="modal-overlay-sidebar" @click.self="cancelChatDelete">
+      <div class="modal-content-sidebar">
+        <div class="modal-header-sidebar">
+          <h4>
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="modal-header-icon-sidebar"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+            Видалити чат?
+          </h4>
+        </div>
+        <p v-if="chatToDelete">Ви дійсно бажаєте видалити чат з <strong>{{ chatToDelete.partner_name }}</strong>? <br/> Вся історія листування буде втрачена назавжди.</p>
+        <div class="modal-actions-sidebar">
+          <button @click="cancelChatDelete" class="modal-button-sidebar cancel">Скасувати</button>
+          <button @click="proceedWithChatDelete" class="modal-button-sidebar confirm">Видалити</button>
+        </div>
+      </div>
+    </div>
+
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch } from 'vue'; // Додано watch
+import { ref, onMounted, onUnmounted, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import axios from 'axios';
 
 const jwt = localStorage.getItem('jwtToken');
 const router = useRouter();
-const route = useRoute(); // Зберігаємо route для використання в isActiveChat та watch
+const route = useRoute();
 const chats = ref([]);
 let intervalId = null;
 
+// --- Стан для модального вікна видалення чату ---
+const showChatDeleteConfirmModal = ref(false);
+const chatToDelete = ref(null); // Буде зберігати { id: number, partner_name: string }
+
 const isActiveChat = (chatId) => {
-  // route.params.id може бути undefined або строкою, тому потрібна перевірка та приведення типів
   return route.params.id !== undefined && parseInt(route.params.id) === chatId;
 };
 
@@ -86,9 +105,7 @@ const formatChatTimestamp = (timestamp) => {
   if (messageDate.toDateString() === today.toDateString()) {
     return timeString;
   } else if (messageDate.toDateString() === yesterday.toDateString()) {
-    // Замість часу для "вчора" можна показувати "Вчора"
-    // return "Вчора";
-    return timeString; // Або залишаємо час
+    return timeString;
   } else {
     const day = messageDate.getDate().toString().padStart(2, '0');
     const month = (messageDate.getMonth() + 1).toString().padStart(2, '0');
@@ -97,36 +114,44 @@ const formatChatTimestamp = (timestamp) => {
 };
 
 const fetchChats = async () => {
-  if (!jwt) { // Якщо немає токена, не робимо запит
+  if (!jwt) {
     console.warn("JWT token not found, skipping chat fetch.");
-    // Можливо, перенаправити на логін, якщо це ще не зроблено
-    // router.push('/login');
     return;
   }
   try {
     const res = await axios.get('http://localhost:8000/chats/', {
       headers: { Authorization: `Bearer ${jwt}` }
     });
-    // Порівнюємо глибше, щоб уникнути зайвих оновлень, якщо дані ті ж самі
-    // але це може бути надлишковим, якщо Vue достатньо розумний з refs
     if (JSON.stringify(chats.value) !== JSON.stringify(res.data)) {
       chats.value = res.data;
     }
   } catch (e) {
     console.error('Не вдалося завантажити чати', e);
     if (e.response && e.response.status === 401) {
-      // Обробка неавторизованого доступу
-      localStorage.removeItem('jwtToken'); // Видаляємо невалідний токен
-      router.push('/login'); // Перенаправляємо на сторінку входу
+      localStorage.removeItem('jwtToken');
+      router.push('/login');
     }
   }
 };
 
-const confirmDeleteChat = (chatId, partnerName) => {
-  if (window.confirm(`Ви впевнені, що хочете видалити чат з "${partnerName}"? Це видалить всю історію листування.`)) {
-    deleteChatOnBackend(chatId);
-  }
+// --- Оновлено для модального вікна ---
+const openDeleteChatModal = (chatItem) => {
+  chatToDelete.value = { id: chatItem.id, partner_name: chatItem.partner_name };
+  showChatDeleteConfirmModal.value = true;
 };
+
+const cancelChatDelete = () => {
+  showChatDeleteConfirmModal.value = false;
+  chatToDelete.value = null;
+};
+
+const proceedWithChatDelete = async () => {
+  if (!chatToDelete.value) return;
+  await deleteChatOnBackend(chatToDelete.value.id);
+  cancelChatDelete(); // Сховати модалку та скинути chatToDelete
+};
+// --- Кінець оновлень для модального вікна ---
+
 
 const deleteChatOnBackend = async (chatId) => {
   try {
@@ -135,7 +160,7 @@ const deleteChatOnBackend = async (chatId) => {
     });
     chats.value = chats.value.filter(chat => chat.id !== chatId);
     if (isActiveChat(chatId)) {
-      router.push('/chats');
+      router.push('/chats'); // Або на головну, якщо /chats перекине на перший чат
     }
     console.log(`Чат ${chatId} успішно видалено`);
   } catch (e) {
@@ -149,24 +174,30 @@ const deleteChatOnBackend = async (chatId) => {
 };
 
 onMounted(() => {
-  fetchChats(); // Перший запит при монтуванні
-  intervalId = setInterval(fetchChats, 2000); // Полінг кожні 2 секунди
+  fetchChats();
+  intervalId = setInterval(fetchChats, 2000);
+  document.addEventListener('keyup', handleGlobalEscKeySidebar);
 });
 
 onUnmounted(() => {
   clearInterval(intervalId);
+  document.removeEventListener('keyup', handleGlobalEscKeySidebar);
 });
 
-// Додаємо watch для оновлення активного чату, якщо параметр маршруту змінюється
-// Це не стосується "пише...", але є корисним для коректної роботи isActiveChat
+const handleGlobalEscKeySidebar = (event) => {
+  if (event.key === 'Escape') {
+    if (showChatDeleteConfirmModal.value) {
+      cancelChatDelete();
+    }
+  }
+};
+
 watch(() => route.params.id, (newId, oldId) => {
-  // Цей watch допоможе оновити клас active-chat, якщо це потрібно
-  // Але для відображення "пише..." це не критично, оскільки дані приходять з fetchChats
+  // ...
 });
-
 
 function goToChat(chatId) {
-  if (!isActiveChat(chatId)) { // Переходимо тільки якщо це не поточний активний чат
+  if (!isActiveChat(chatId)) {
     router.push(`/chats/${chatId}`);
   }
 }
@@ -422,4 +453,111 @@ function goHome() {
 .chat-list-wrapper::-webkit-scrollbar-track { background: transparent; margin: 4px 0; }
 .chat-list-wrapper::-webkit-scrollbar-thumb { background: #434c58; border-radius: 3px; }
 .chat-list-wrapper::-webkit-scrollbar-thumb:hover { background: #525c68; }
+/* Стилі для модального вікна видалення чату */
+.modal-overlay-sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000; /* Вищий z-index, якщо сайдбар має свій z-index */
+  opacity: 0;
+  animation: fadeInOverlaySidebar 0.2s forwards;
+}
+
+@keyframes fadeInOverlaySidebar {
+  to { opacity: 1; }
+}
+
+.modal-content-sidebar {
+  background-color: #36393f;
+  padding: 24px;
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6);
+  width: 90%;
+  max-width: 420px;
+  color: #dcddde;
+  text-align: left;
+  transform: scale(0.95) translateY(0px);
+  opacity: 0;
+  animation: scaleInModalSidebar 0.25s forwards cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+@keyframes scaleInModalSidebar {
+  to {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
+.modal-header-sidebar {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.modal-header-icon-sidebar { /* Унікальний клас для іконки */
+  color: #f0b232;
+  margin-right: 12px;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+}
+
+.modal-content-sidebar h4 {
+  margin:0;
+  font-size: 1.15em;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.modal-content-sidebar p {
+  margin-bottom: 24px;
+  font-size: 1em;
+  line-height: 1.6;
+  color: #b9bbbe;
+}
+.modal-content-sidebar p strong {
+  color: #ffffff; /* Виділяємо ім'я партнера */
+}
+
+
+.modal-actions-sidebar { /* Унікальний клас для контейнера кнопок */
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.modal-button-sidebar { /* Унікальний клас для кнопок */
+  padding: 10px 20px;
+  border: none;
+  border-radius: 5px;
+  font-size: 0.95em;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
+}
+.modal-button-sidebar:active {
+  transform: translateY(1px);
+}
+
+.modal-button-sidebar.confirm {
+  background-color: #d83c3e;
+  color: white;
+  box-shadow: 0 2px 3px rgba(0,0,0,0.2);
+}
+.modal-button-sidebar.confirm:hover {
+  background-color: #bf3032;
+  box-shadow: 0 3px 5px rgba(0,0,0,0.25);
+}
+
+.modal-button-sidebar.cancel {
+  background-color: #4f545c;
+  color: #dcddde;
+}
+.modal-button-sidebar.cancel:hover {
+  background-color: #5c626a;
+}
 </style>

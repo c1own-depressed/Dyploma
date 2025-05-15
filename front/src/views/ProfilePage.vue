@@ -27,7 +27,7 @@
         {{ user.email }}
       </p>
       <p v-if="user.rating !== null && user.rating !== undefined">
-        <strong>Рейтинг:</strong> {{ user.rating }}
+        <strong>Рейтинг:</strong> {{ user.rating % 1 === 0 ? user.rating : user.rating.toFixed(1) }}
       </p>
     </div>
 
@@ -62,7 +62,7 @@
                         <p>Статус: {{ getStatusText(taskItem.status) }}</p>
                         <button v-if="taskItem.status !== 'in_progress' && taskItem.status !== 'paid'" class="edit-btn" @click.stop="editTask(taskItem.id)">Редагувати</button>
                         <button v-if="taskItem.status === 'paid'" class="complete-btn" @click.stop="viewTaskResult(taskItem.id)">Переглянути результат</button>
-                        <button v-if="taskItem.status === 'in_progress'" class="remove-executor-btn" @click.stop="removeExecutorByOwner(taskItem.id)">Відключити виконавця</button>
+                        <button v-if="taskItem.status === 'in_progress'" class="remove-executor-btn" @click.stop="confirmRemoveExecutor(taskItem.id)">Відключити виконавця</button>
                       </div>
                     </transition>
                   </li>
@@ -81,7 +81,7 @@
                       <strong class="comment-author">{{ commentEntry.author_username }}</strong>
                       <div class="comment-meta-and-actions">
                         <span class="comment-date-small">{{ new Date(commentEntry.created_at).toLocaleString() }}</span>
-                        <button @click.stop="confirmDeleteStartupComment(startupItem.id, commentEntry.id)" class="delete-comment-icon" title="Видалити коментар">
+                        <button @click.stop="confirmDeleteStartupCommentAction(startupItem.id, commentEntry.id, commentEntry.text)" class="delete-comment-icon" title="Видалити коментар">
                           &#x2715; </button>
                       </div>
                     </div>
@@ -124,16 +124,16 @@
                 <button
                     v-if="task.status === 'in_progress'"
                     class="refuse-btn"
-                    @click.stop="refuseTask(task.id)"
+                    @click.stop="confirmRefuseTask(task.id)"
                 >
                   Відмовитися
                 </button>
                 <button
                     v-else-if="task.status === 'done'"
-                    class="complete-btn"
+                    class="complete-btn paid-style"
                     @click.stop="markTaskAsPaid(task.id)"
                 >
-                  Відправити замовнику
+                  Оплачено
                 </button>
               </div>
             </transition>
@@ -142,25 +142,56 @@
         <p v-else>Немає активних завдань.</p>
       </div>
     </div>
+
+    <div v-if="showConfirmModal" class="profile-modal-overlay" @click.self="cancelAction">
+      <div class="profile-modal-content">
+        <div class="profile-modal-header">
+          <h4>
+            <svg v-if="!isNotificationModal" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="profile-modal-header-icon"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+            <svg v-else xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="profile-modal-header-icon success"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+            {{ confirmModalTitle }}
+          </h4>
+        </div>
+        <p v-html="confirmModalMessage"></p>
+        <div class="profile-modal-actions">
+          <button v-if="!isNotificationModal" @click="cancelAction" class="profile-modal-button cancel">{{ cancelButtonText }}</button>
+          <button @click="proceedWithAction" :class="['profile-modal-button', isNotificationModal ? 'ok' : 'confirm']">{{ confirmButtonText }}</button>
+        </div>
+      </div>
+    </div>
+
   </main>
 </template>
 
 <script setup>
 import Navbar from '../components/Navbar.vue'
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, onUnmounted } from 'vue'
 import axios from 'axios'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
 const user = ref({ username: '', email: '', rating: null })
-const startups = ref([]) // Тепер startups будуть містити коментарі
+const startups = ref([])
 const tasks = ref([])
-// const userComments = ref([]) // Цей ref більше не потрібен, якщо немає окремої вкладки
 const activeTab = ref('startups')
-const expandedIds = ref({ startups: {}, tasks: {} }) // Для розгортання стартапів та їхніх завдань
+const expandedIds = ref({ startups: {}, tasks: {} })
 const jwt = localStorage.getItem('jwtToken')
 
+// --- Стан для універсального модального вікна ---
+const showConfirmModal = ref(false)
+const confirmModalTitle = ref('')
+const confirmModalMessage = ref('')
+const confirmActionCallback = ref(null)
+const confirmButtonText = ref('Так')
+const cancelButtonText = ref('Скасувати')
+const isNotificationModal = ref(false); // Прапорець для режиму сповіщення
+// --- Кінець стану для модального вікна ---
+
 const fetchProfile = async () => {
+  if (!jwt) {
+    router.push('/login');
+    return;
+  }
   try {
     const res = await axios.get('http://localhost:8000/user/profile', {
       headers: { Authorization: `Bearer ${jwt}` }
@@ -168,22 +199,24 @@ const fetchProfile = async () => {
     user.value = res.data
   } catch (e) {
     console.error('Не вдалося завантажити профіль', e)
+    if (e.response && e.response.status === 401) {
+      localStorage.removeItem('jwtToken');
+      router.push('/login');
+    }
   }
 }
 
-// fetchStartups тепер завантажує стартапи з їхніми завданнями та коментарями
 const fetchStartups = async () => {
+  if (!jwt) return;
   try {
-    const res = await axios.get('http://localhost:8000/user/startups', { // Ендпоінт тепер повертає і коментарі
+    const res = await axios.get('http://localhost:8000/user/startups', {
       headers: { Authorization: `Bearer ${jwt}` }
     })
     startups.value = res.data.map(startup => ({
       ...startup,
-      // Переконуємося, що tasks та comments ініціалізовані як масиви, якщо вони можуть бути відсутні
       tasks: startup.tasks || [],
       comments: startup.comments || []
     }));
-    // Ініціалізуємо expandedIds для нових стартапів, якщо потрібно (щоб уникнути помилок)
     startups.value.forEach(s => {
       if (expandedIds.value.startups[s.id] === undefined) {
         expandedIds.value.startups[s.id] = false;
@@ -195,11 +228,12 @@ const fetchStartups = async () => {
       });
     });
   } catch (e) {
-    console.error('Помилка при завантаженні стартапів з коментарями', e)
+    console.error('Помилка при завантаженні стартапів', e)
   }
 }
 
-const fetchTasks = async () => { // Для вкладки "Активні завдання"
+const fetchTasks = async () => {
+  if (!jwt) return;
   try {
     const res = await axios.get('http://localhost:8000/user/tasks', {
       headers: { Authorization: `Bearer ${jwt}` }
@@ -215,14 +249,14 @@ const fetchTasks = async () => { // Для вкладки "Активні зав
   }
 }
 
-// Функція fetchUserComments більше не потрібна, якщо немає окремої вкладки
-
 const getStatusText = (status) => {
-  if (status === 'in_progress') return 'Очікує на виконання!'
-  if (status === 'pending') return 'Очікує на виконавця'
-  if (status === 'done') return 'Очікує оплати!'
-  if (status === 'paid') return 'Оплачено'
-  return status
+  const statuses = {
+    'in_progress': 'Виконується',
+    'pending': 'Очікує на виконавця',
+    'done': 'Очікує на оплату',
+    'paid': 'Оплачено'
+  };
+  return statuses[status] || status;
 }
 
 const toggleExpand = (type, id) => {
@@ -233,14 +267,23 @@ const toggleExpand = (type, id) => {
   }
 }
 
-// --- Функції для навігації та дій з завданнями/стартапами (залишаються) ---
 const markTaskAsCompleted = (taskId) => router.push({ name: 'CompleteTask', params: { taskId } });
+
 const markTaskAsPaid = async (taskId) => {
   try {
     await axios.put(`http://localhost:8000/user/tasks/${taskId}/status`, { status: 'paid' }, { headers: { Authorization: `Bearer ${jwt}` } });
-    await fetchTasks();
-  } catch (e) { console.error('Не вдалося оновити статус на paid', e); }
+    if (activeTab.value === 'tasks') {
+      await fetchTasks();
+    } else if (activeTab.value === 'startups') {
+      await fetchStartups();
+    }
+    showNotification('Статус оновлено', 'Статус завдання успішно оновлено на "Оплачено".');
+  } catch (e) {
+    console.error('Не вдалося оновити статус на paid', e);
+    showNotification('Помилка', `Не вдалося оновити статус: ${e.response?.data?.detail || e.message}`);
+  }
 };
+
 const createStartup = () => router.push('/create-startup');
 const editStartup = (startupId) => router.push(`/edit-startup/${startupId}`);
 const createTask = (startupId) => router.push(`/create-task?startup_id=${startupId}`);
@@ -248,202 +291,173 @@ const editTask = (taskId) => router.push(`/edit-task/${taskId}`);
 const viewTaskResult = (taskId) => router.push(`/task-result/${taskId}`);
 
 const fetchUserRating = async () => {
+  if (!jwt) return;
   try {
     const res = await axios.get('http://localhost:8000/user/rating', { headers: { Authorization: `Bearer ${jwt}` } });
     user.value.rating = res.data.average_rating;
   } catch (e) { console.error('Не вдалося отримати рейтинг', e); }
 };
 
-const refuseTask = async (taskId) => {
-  if (!confirm('Ви впевнені, що хочете відмовитися від цього завдання?')) return;
-  try {
-    await axios.put(`http://localhost:8000/user/tasks/${taskId}/refuse`, {}, { headers: { Authorization: `Bearer ${jwt}` } });
-    await fetchTasks();
-    alert('Ви успішно відмовилися від завдання.');
-  } catch (e) {
-    console.error('Не вдалося відмовитися від завдання', e);
-    alert(`Помилка при відмові від завдання: ${e.response?.data?.detail || e.message}`);
-  }
+// --- Функції з використанням модального вікна ---
+const showNotification = (title, message) => {
+  confirmModalTitle.value = title;
+  confirmModalMessage.value = message;
+  isNotificationModal.value = true;
+  confirmActionCallback.value = null;
+  confirmButtonText.value = 'OK';
+  showConfirmModal.value = true;
 };
 
-const removeExecutorByOwner = async (taskId) => {
-  if (!confirm('Ви впевнені, що хочете відключити виконавця від цього завдання?')) return;
+const confirmRemoveExecutor = (taskId) => {
+  confirmModalTitle.value = 'Відключити виконавця?';
+  confirmModalMessage.value = 'Ви впевнені, що хочете відключити виконавця від цього завдання? <br/> Це поверне завдання у статус "Очікує на виконавця".';
+  confirmButtonText.value = 'Відключити';
+  cancelButtonText.value = 'Скасувати';
+  isNotificationModal.value = false; // Переконуємось, що це не режим сповіщення
+  confirmActionCallback.value = () => actualRemoveExecutor(taskId);
+  showConfirmModal.value = true;
+};
+
+const actualRemoveExecutor = async (taskId) => {
   try {
     await axios.put(`http://localhost:8000/user/startups/tasks/${taskId}/remove-executor`, {}, { headers: { Authorization: `Bearer ${jwt}` } });
-    await fetchStartups(); // Оновлюємо стартапи, оскільки статус завдання змінився
-    alert('Виконавця успішно відключено.');
+    await fetchStartups();
+    showNotification('Успіх!', 'Виконавця успішно відключено від завдання.');
   } catch (e) {
     console.error('Не вдалося відключити виконавця:', e);
-    alert(`Помилка при відключенні виконавця: ${e.response?.data?.detail || e.message}`);
+    showNotification('Помилка', `Не вдалося відключити виконавця: ${e.response?.data?.detail || e.message}`);
   }
 };
 
-const deleteStartupComment = async (startupId, commentId) => {
+const confirmDeleteStartupCommentAction = (startupId, commentId, commentText = '') => {
+  confirmModalTitle.value = 'Видалити коментар?';
+  let message = 'Ви впевнені, що хочете видалити цей коментар?';
+  if (commentText) {
+    const snippet = commentText.length > 100 ? commentText.substring(0, 100) + "..." : commentText;
+    message += `<br/><br/><div class="comment-snippet-preview">"${snippet}"</div>`;
+  }
+  confirmModalMessage.value = message;
+  confirmButtonText.value = 'Видалити';
+  cancelButtonText.value = 'Скасувати';
+  isNotificationModal.value = false;
+  confirmActionCallback.value = () => actualDeleteStartupComment(startupId, commentId);
+  showConfirmModal.value = true;
+};
+
+const actualDeleteStartupComment = async (startupId, commentId) => {
   try {
-    // Додаємо префікс /user/ до URL
     await axios.delete(`http://localhost:8000/user/startups/${startupId}/comments/${commentId}`, {
       headers: { Authorization: `Bearer ${jwt}` }
     });
-    await fetchStartups(); // Перезавантажуємо стартапи, щоб оновити список коментарів
-    alert('Коментар до стартапу успішно видалено.');
+    await fetchStartups();
+    showNotification('Успіх!', 'Коментар успішно видалено.');
   } catch (e) {
     console.error('Помилка при видаленні коментаря стартапу', e);
-    // Більш детальне повідомлення про помилку для діагностики
+    let errorMessageText = `Помилка: ${e.message}`;
     if (e.response) {
-      alert(`Помилка видалення: ${e.response.status} - ${e.response.data.detail || e.message}`);
-    } else {
-      alert(`Помилка мережі або запиту: ${e.message}`);
+      errorMessageText = `Помилка видалення: ${e.response.status} - ${e.response.data.detail || e.message}`;
     }
+    showNotification('Помилка', errorMessageText);
   }
 };
 
-const confirmDeleteStartupComment = (startupId, commentId) => {
-  if (confirm('Ви впевнені, що хочете видалити цей коментар зі стартапу?')) {
-    deleteStartupComment(startupId, commentId);
+const confirmRefuseTask = (taskId) => {
+  confirmModalTitle.value = 'Відмовитися від завдання?';
+  confirmModalMessage.value = 'Ви впевнені, що хочете відмовитися від виконання цього завдання? <br/> Це може вплинути на ваш рейтинг, якщо завдання вже було прийнято.';
+  confirmButtonText.value = 'Так, відмовитися';
+  cancelButtonText.value = 'Залишитися';
+  isNotificationModal.value = false;
+  confirmActionCallback.value = () => actualRefuseTask(taskId);
+  showConfirmModal.value = true;
+};
+
+const actualRefuseTask = async (taskId) => {
+  try {
+    await axios.put(`http://localhost:8000/user/tasks/${taskId}/refuse`, {}, { headers: { Authorization: `Bearer ${jwt}` } });
+    await fetchTasks();
+    showNotification('Завдання скасовано', 'Ви успішно відмовилися від виконання цього завдання.');
+  } catch (e) {
+    console.error('Не вдалося відмовитися від завдання', e);
+    showNotification('Помилка', `Не вдалося відмовитися від завдання: ${e.response?.data?.detail || e.message}`);
   }
 };
 
-// Стара функція deleteComment (якщо була для окремої вкладки "Мої коментарі") тепер не потрібна
+const proceedWithAction = () => {
+  if (!isNotificationModal.value && typeof confirmActionCallback.value === 'function') {
+    confirmActionCallback.value();
+  }
+  closeConfirmModal();
+};
 
-// Слідкуємо за зміною активної вкладки для завантаження відповідних даних
-watch(activeTab, (newTab, oldTab) => {
-  if (newTab === 'startups' && startups.value.length === 0) { // Завантажуємо стартапи, якщо їх ще немає
+const cancelAction = () => {
+  closeConfirmModal();
+};
+
+const closeConfirmModal = () => {
+  showConfirmModal.value = false;
+  // Не скидаємо title/message одразу, щоб вони не зникли під час анімації закриття
+  setTimeout(() => {
+    if (!showConfirmModal.value) { // Перевірка, чи модалка все ще закрита
+      confirmModalTitle.value = '';
+      confirmModalMessage.value = '';
+      confirmActionCallback.value = null;
+      confirmButtonText.value = 'Так';
+      cancelButtonText.value = 'Скасувати';
+      isNotificationModal.value = false;
+    }
+  }, 300); // Має бути трохи більше або дорівнювати часу анімації .profile-modal-content
+};
+
+const handleGlobalEscProfile = (event) => {
+  if (event.key === 'Escape' && showConfirmModal.value) {
+    cancelAction();
+  }
+};
+
+watch(activeTab, (newTab) => {
+  expandedIds.value = { startups: {}, tasks: {} };
+  if (newTab === 'startups') {
     fetchStartups();
-  } else if (newTab === 'tasks' && tasks.value.length === 0) { // Завантажуємо завдання, якщо їх ще немає
+  } else if (newTab === 'tasks') {
     fetchTasks();
   }
-  // Логіка для вкладки "comments" видалена, якщо вкладка прибрана
 });
 
 onMounted(() => {
+  if (!jwt) {
+    router.push('/login');
+    return;
+  }
   fetchProfile();
   fetchUserRating();
-  // Завантажуємо дані для активної вкладки за замовчуванням
   if (activeTab.value === 'startups') {
     fetchStartups();
   } else if (activeTab.value === 'tasks') {
     fetchTasks();
   }
+  document.addEventListener('keyup', handleGlobalEscProfile);
+});
+
+onUnmounted(() => {
+  document.removeEventListener('keyup', handleGlobalEscProfile);
 });
 
 </script>
 
 <style scoped>
-/* Стилі для розділу коментарів всередині стартапу */
-.startup-actions { /* Обгортка для кнопок "Редагувати стартап" та "+ Додати завдання" */
-  margin-top: 1.5rem; /* Відступ зверху перед кнопками */
-  display: flex;
-  justify-content: center; /* Додано для центрування по горизонталі */
-  gap: 0.8rem; /* Відстань між кнопками */
-  flex-wrap: wrap; /* Дозволяє кнопкам переноситися, якщо не вистачає місця */
-  margin-bottom: 1rem; /* Відступ знизу, перед заголовком коментарів */
-}
-
-.comments-heading {
-  font-size: 1.1rem;
-  font-weight: 600;
-  color: #d5d8de;
-  /* margin-top: 1.5rem;  Цей відступ тепер регулюється margin-bottom від .startup-actions */
-  margin-bottom: 0.8rem;
-  padding-top: 0.8rem; /* Можна залишити для внутрішнього відступу, якщо потрібен */
-  border-top: 1px solid rgba(255, 255, 255, 0.1); /* Лінія-розділювач */
-}
-
-.startup-comments-list {
-  list-style: none;
-  padding-left: 0;
-  margin-top: 0.5rem;
-}
-
-.comment-entry {
-  background-color: rgba(255, 255, 255, 0.03);
-  padding: 0.8rem 1rem;
-  border-radius: 8px;
-  margin-bottom: 0.8rem;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.comment-entry-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.5rem;
-}
-
-.comment-author {
-  font-weight: 600;
-  color: #c8c9ce;
-  font-size: 0.95rem;
-  margin-right: auto; /* Щоб ім'я автора займало доступний простір зліва */
-}
-
-.comment-meta-and-actions { /* Нова обгортка для дати та кнопки видалення */
-  display: flex;
-  align-items: center;
-  gap: 0.75rem; /* Проміжок між датою та хрестиком */
-  margin-left: 0.5rem; /* Невеликий відступ зліва від імені автора */
-}
-
-.comment-date-small {
-  font-size: 0.8rem;
-  color: #8a8f9c;
-}
-
-.delete-comment-icon { /* Стиль для іконки-хрестика */
-  background: none;
-  border: none;
-  color: #e74c3c; /* Червоний колір, як у кнопки "Відмовитися" */
-  font-size: 1.2rem; /* Розмір хрестика */
-  font-weight: bold;
-  cursor: pointer;
-  padding: 0.1rem 0.3rem; /* Невеликий паддінг для зручності кліку */
-  line-height: 1; /* Для кращого вертикального вирівнювання */
-  transition: color 0.2s ease;
-}
-
-.delete-comment-icon:hover {
-  color: #c0392b; /* Темніший червоний при наведенні */
-}
-
-.comment-text-small {
-  font-size: 0.9rem;
-  color: #b0b3b8;
-  line-height: 1.5;
-  margin-bottom: 0.3rem; /* Зменшив відступ, оскільки кнопка тепер не текстова */
-  white-space: pre-wrap;
-}
-
-/* Стиль для старої кнопки видалення, якщо вона ще десь використовується, або можна видалити */
-/*
-.delete-comment-btn-small {
-  padding: 0.5rem 1rem;
-  font-size: 0.85rem;
-  margin-top: 0.3rem;
-  align-self: flex-end;
-}
-*/
-
-.no-comments-text {
-  color: #a0a8b5;
-  font-style: italic;
-  margin-top: 0.5rem;
-  padding-left: 0.5rem;
-}
-
-/* ... (решта ваших стилів) ... */
 .profile-page {
   padding: 2rem;
-  padding-top: 80px; /* Відступ для Navbar */
+  padding-top: 80px;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   color: #f0f0f0;
-  background-image: url('../assets/img.jpg'); /* Переконайтесь, що шлях правильний */
+  background-image: url('../assets/img.jpg');
   background-size: cover;
   background-position: center;
-  background-attachment: fixed; /* Фіксований фон */
+  background-attachment: fixed;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  align-items: center; /* Центруємо основний контент */
+  align-items: center;
   width: 100%;
 }
 
@@ -467,7 +481,7 @@ onMounted(() => {
   border: 1px solid rgba(255, 255, 255, 0.12);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
   width: 100%;
-  max-width: 240px;
+  max-width: 280px;
   text-align: center;
 }
 
@@ -548,7 +562,7 @@ onMounted(() => {
   width: 100%;
 }
 
-.task-item { /* Загальний стиль для елементів списку, включаючи коментарі */
+.task-item {
   background: rgba(35, 30, 50, 0.6);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
@@ -572,13 +586,13 @@ onMounted(() => {
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   margin-bottom: 1rem;
 }
-.task-item ul .task-toggle { /* Стилі для списку завдань всередині стартапу */
+.task-item ul .task-toggle {
   border-top: 1px solid rgba(255,255,255,0.05);
   margin-top: 0.5rem;
-  padding: 0.5rem 0; /* Додав padding для консистентності */
-  margin-bottom: 0.5rem; /* Додав margin-bottom */
+  padding: 0.5rem 0;
+  margin-bottom: 0.5rem;
 }
-.task-item > .task-header { /* Стилі для заголовку самого стартапу */
+.task-item > .task-header {
   padding-top: 0;
   margin-bottom: 1rem;
 }
@@ -593,10 +607,10 @@ onMounted(() => {
   text-align: center;
   font-size: 1.2rem;
 }
-.task-title-text { /* Назва завдання всередині стартапу */
-  margin-left: 0; /* Прибираємо відступ, якщо є */
+.task-title-text {
+  margin-left: 0;
   white-space: normal;
-  font-size: 1rem; /* Трохи менше, ніж назва стартапу */
+  font-size: 1rem;
 }
 
 .expand-toggle {
@@ -606,7 +620,7 @@ onMounted(() => {
   transition: transform 0.4s ease-in-out;
 }
 
-.task-details { /* Для розгорнутого контенту стартапу та завдання */
+.task-details {
   padding-top: 0.8rem;
   color: #c5c8ce;
   line-height: 1.6;
@@ -614,26 +628,25 @@ onMounted(() => {
 .task-details p {
   margin: 0.6rem 0;
 }
-.task-details h4 { /* Заголовок "Завдання:" всередині стартапу */
+.task-details h4 {
   font-size: 1rem;
   font-weight: 600;
   color: #d5d8de;
   margin-top: 1.2rem;
   margin-bottom: 0.5rem;
 }
-.task-details ul { /* Список завдань або коментарів */
-  padding-left: 1rem; /* Відступ для вкладених списків */
+.task-details ul {
+  padding-left: 1rem;
   margin-top: 0.5rem;
 }
-.task-details ul li { /* Елемент завдання або коментаря в списку */
-  background: transparent; /* Прозорий фон, якщо не перевизначено */
+.task-details ul li {
+  background: transparent;
   padding: 0.3rem 0;
   border-radius: 0;
   margin-bottom: 0.3rem;
   box-shadow: none;
   border: none;
 }
-
 
 .create-startup-btn, .edit-btn, .complete-btn, .refuse-btn, .remove-executor-btn {
   padding: 0.7rem 1.3rem;
@@ -646,19 +659,16 @@ onMounted(() => {
   margin-right: 0.8rem;
   margin-top: 1rem;
 }
-/* Останній кнопці в блоці прибираємо правий відступ */
-.startup-actions button:last-child { /* Застосовуємо до кнопок всередині .startup-actions */
-  margin-right: 0;
-}
-.comment-entry button:last-child { /* Це для кнопки-хрестика, якщо вона буде останньою, але вона єдина */
-  margin-right: 0;
-}
 
+.startup-actions button:last-child,
+.task-details button:last-child {
+  margin-right: 0;
+}
 
 .create-startup-btn {
   background-color: #007aff;
   color: #ffffff;
-  display: block; /* Щоб margin auto працював */
+  display: block;
   margin-left: auto;
   margin-right: auto;
   margin-bottom: 1.5rem;
@@ -668,8 +678,8 @@ onMounted(() => {
   box-shadow: 0 2px 8px rgba(0, 123, 255, 0.4);
 }
 
-.edit-btn { /* Кнопка "Редагувати", "+ Додати завдання" */
-  background-color: rgba(147, 38, 198, 0.7); /* Фіолетовий */
+.edit-btn {
+  background-color: rgba(147, 38, 198, 0.7);
   color: #ffffff;
 }
 .edit-btn:hover {
@@ -677,9 +687,9 @@ onMounted(() => {
   box-shadow: 0 2px 8px rgba(147, 38, 198, 0.4);
 }
 
-.complete-btn { /* Кнопка "Виконати", "Переглянути результат", "Редагувати стартап" */
+.complete-btn {
   background-color: transparent;
-  color: #82ddf0; /* Світло-блакитний */
+  color: #82ddf0;
   border: 1px solid #82ddf0;
 }
 .complete-btn:hover {
@@ -687,8 +697,8 @@ onMounted(() => {
   border-color: #a0e5f3;
   box-shadow: 0 2px 8px rgba(130, 221, 240, 0.3);
 }
-.complete-btn.paid-style { /* Для кнопки "Відправити замовнику" коли статус paid */
-  border-color: #5cb85c; /* Зелений */
+.complete-btn.paid-style {
+  border-color: #5cb85c;
   color: #5cb85c;
 }
 .complete-btn.paid-style:hover {
@@ -697,23 +707,22 @@ onMounted(() => {
   box-shadow: 0 2px 8px rgba(92, 184, 92, 0.3);
 }
 
-.refuse-btn { /* Кнопка "Відмовитися" (якщо окрема) */
-  background-color: #e74c3c; /* Червоний */
+.refuse-btn {
+  background-color: #e74c3c;
   color: white;
 }
 .refuse-btn:hover {
-  background-color: #c0392b; /* Темніший червоний */
+  background-color: #c0392b;
   box-shadow: 0 2px 8px rgba(231, 76, 60, 0.4);
 }
-.remove-executor-btn { /* Кнопка "Відключити виконавця" */
-  background-color: #e67e22; /* Помаранчевий */
+.remove-executor-btn {
+  background-color: #e67e22;
   color: white;
 }
 .remove-executor-btn:hover {
-  background-color: #d35400; /* Темніший помаранчевий */
+  background-color: #d35400;
   box-shadow: 0 2px 8px rgba(230, 126, 34, 0.4);
 }
-
 
 .expandable {
   overflow: hidden;
@@ -726,7 +735,7 @@ onMounted(() => {
   padding-bottom 0.5s cubic-bezier(0.4, 0, 0.2, 1),
   margin-top 0.5s cubic-bezier(0.4, 0, 0.2, 1),
   margin-bottom 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-  max-height: 1000px; /* Або більше, якщо контент може бути дуже високим */
+  max-height: 1000px;
   opacity: 1;
 }
 
@@ -738,5 +747,228 @@ onMounted(() => {
   padding-bottom: 0 !important;
   margin-top: 0 !important;
   margin-bottom: 0 !important;
+}
+
+.startup-actions {
+  margin-top: 1.5rem;
+  display: flex;
+  justify-content: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.comments-heading {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #d5d8de;
+  margin-bottom: 0.8rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.startup-comments-list {
+  list-style: none;
+  padding-left: 0;
+  margin-top: 0.5rem;
+}
+
+.comment-entry {
+  background-color: rgba(255, 255, 255, 0.03);
+  padding: 0.8rem 1rem;
+  border-radius: 8px;
+  margin-bottom: 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.comment-entry-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.comment-author {
+  font-weight: 600;
+  color: #c8c9ce;
+  font-size: 0.95rem;
+  margin-right: auto;
+}
+
+.comment-meta-and-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: 0.5rem;
+}
+
+.comment-date-small {
+  font-size: 0.8rem;
+  color: #8a8f9c;
+}
+
+.delete-comment-icon {
+  background: none;
+  border: none;
+  color: #e74c3c;
+  font-size: 1.2rem;
+  font-weight: bold;
+  cursor: pointer;
+  padding: 0.1rem 0.3rem;
+  line-height: 1;
+  transition: color 0.2s ease;
+}
+
+.delete-comment-icon:hover {
+  color: #c0392b;
+}
+
+.comment-text-small {
+  font-size: 0.9rem;
+  color: #b0b3b8;
+  line-height: 1.5;
+  margin-bottom: 0.3rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.no-comments-text {
+  color: #a0a8b5;
+  font-style: italic;
+  margin-top: 0.5rem;
+  padding-left: 0.5rem;
+}
+
+/* Стилі для універсального модального вікна на сторінці профілю */
+.profile-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1050;
+  opacity: 0;
+  animation: fadeInOverlayProfile 0.2s forwards;
+}
+
+@keyframes fadeInOverlayProfile {
+  to { opacity: 1; }
+}
+
+.profile-modal-content {
+  background-color: #36393f;
+  padding: 25px 30px;
+  border-radius: 8px;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.5);
+  width: 90%;
+  max-width: 450px;
+  color: #dcddde;
+  text-align: left;
+  transform: scale(0.95) translateY(0px);
+  opacity: 0;
+  animation: scaleInModalProfile 0.25s forwards cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+@keyframes scaleInModalProfile {
+  to {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
+.profile-modal-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 15px;
+}
+.profile-modal-header-icon {
+  margin-right: 12px;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+}
+/* Іконка за замовчуванням (попередження) */
+.profile-modal-header-icon {
+  color: #f0b232; /* Жовтий для попередження */
+}
+/* Іконка для успіху/інформації */
+.profile-modal-header-icon.success {
+  color: #28a745; /* Зелений */
+}
+
+
+.profile-modal-content h4 {
+  margin:0;
+  font-size: 1.2em;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.profile-modal-content p {
+  margin-bottom: 25px;
+  font-size: 1em;
+  line-height: 1.65;
+  color: #b9bbbe;
+}
+.comment-snippet-preview {
+  color: #dcddde;
+  background-color: rgba(255,255,255,0.05);
+  padding: 8px 10px;
+  border-radius: 4px;
+  font-style: italic;
+  margin-top: 10px;
+  max-height: 60px;
+  overflow-y: auto;
+  border: 1px solid rgba(255,255,255,0.1);
+  font-size: 0.9em;
+}
+
+
+.profile-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.profile-modal-button {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 5px;
+  font-size: 0.95em;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
+}
+.profile-modal-button:active {
+  transform: translateY(1px);
+}
+
+.profile-modal-button.confirm {
+  background-color: #d83c3e;
+  color: white;
+  box-shadow: 0 2px 3px rgba(0,0,0,0.2);
+}
+.profile-modal-button.confirm:hover {
+  background-color: #bf3032;
+  box-shadow: 0 3px 5px rgba(0,0,0,0.25);
+}
+
+.profile-modal-button.cancel {
+  background-color: #4f545c;
+  color: #dcddde;
+}
+.profile-modal-button.cancel:hover {
+  background-color: #5c626a;
+}
+
+.profile-modal-button.ok { /* Стиль для кнопки "ОК" у сповіщеннях */
+  background-color: #007bff;
+  color: white;
+}
+.profile-modal-button.ok:hover {
+  background-color: #0056b3;
 }
 </style>

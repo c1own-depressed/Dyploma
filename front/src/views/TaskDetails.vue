@@ -1,84 +1,200 @@
 <template>
   <main class="task-detail-page">
-
-
     <div v-if="task" class="task-card">
       <button class="back-btn" @click="goBack">← Назад на головну</button>
       <h2 class="task-title">{{ task.title }}</h2>
       <p class="task-field"><strong>Опис:</strong> {{ task.description }}</p>
-      <p class="task-field"><strong>Дата створення:</strong> {{ task.created_at }}</p>
+      <p class="task-field"><strong>Дата створення:</strong> {{ formattedCreatedAtDate }}</p>
       <p class="task-field"><strong>Автор:</strong> {{ task.owner_name }}</p>
 
-      <button v-if="task.status === 'pending'" class="take-btn" @click="takeTask">Взяти завдання</button>
-      <p v-if="task.status === 'in_progress'" class="error-text">Завдання вже взято!</p>
-      <p v-if="errorMessage" class="error-text">{{ errorMessage }}</p>
+      <div v-if="errorMessage" class="message-text error-text">{{ errorMessage }}</div>
+      <div v-if="successMessage" class="message-text success-text">{{ successMessage }}</div>
 
-      <!-- Кнопка для зв'язку з замовником -->
-      <button v-if="task.status === 'pending'" class="contact-btn" @click="contactOwner">Зв'язатися з замовником</button>
+      <div class="action-buttons-container">
+        <button
+            v-if="task.status === 'pending'"
+            class="take-btn"
+            @click="takeTask"
+            :disabled="isTakingTask"
+        >
+          {{ isTakingTask ? 'Обробка...' : 'Взяти завдання' }}
+        </button>
+
+        <p v-if="task.status === 'in_progress' && !successMessage && !errorMessage" class="info-text">
+          Завдання вже виконується.
+        </p>
+        <p v-if="task.status === 'done'" class="info-text">
+          Завдання виконано та очікує на оплату.
+        </p>
+        <p v-if="task.status === 'paid'" class="info-text">
+          Завдання виконано та оплачено.
+        </p>
+
+
+        <button
+            v-if="canContactOwner"
+            class="contact-btn"
+            @click="contactOwner"
+            :disabled="isCreatingChat"
+        >
+          {{ isCreatingChat ? 'Створення чату...' : 'Зв\'язатися з замовником' }}
+        </button>
+      </div>
     </div>
 
+    <div v-else-if="initialLoadingError" class="loading-text"> <p class="error-text">{{ initialLoadingError }}</p>
+      <button class="back-btn" @click="goBack" style="margin-top: 1rem;">← Назад на головну</button>
+    </div>
     <div v-else class="loading-text">
-      <p>Завантаження...</p>
+      <p>Завантаження детальної інформації про завдання...</p>
     </div>
   </main>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 
 const route = useRoute();
 const router = useRouter();
 const task = ref(null);
-const jwt = ref(localStorage.getItem('jwtToken')); // JWT з localStorage
+const jwt = ref(localStorage.getItem('jwtToken'));
 const errorMessage = ref('');
+const successMessage = ref('');
+const initialLoadingError = ref(''); // Окрема помилка для початкового завантаження
 
-// Функція для отримання завдання
+const isTakingTask = ref(false); // Стан для блокування кнопки "Взяти завдання" під час запиту
+const isCreatingChat = ref(false); // Стан для блокування кнопки "Зв'язатися" під час запиту
+
+// Покращене форматування дати
+const formattedCreatedAtDate = computed(() => {
+  if (task.value && task.value.created_at) {
+    return new Date(task.value.created_at).toLocaleDateString('uk-UA', {
+      year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+  }
+  return '';
+});
+
+// Визначаємо, чи може користувач зв'язатися з замовником
+// Наприклад, якщо завдання ще не взято, або якщо поточний користувач не є автором завдання
+const canContactOwner = computed(() => {
+  if (!task.value || !user.value) return false;
+  // Припускаємо, що у вас є інформація про поточного користувача, наприклад, user.value.id
+  // і що task.value.owner_id містить ID автора завдання
+  // return task.value.owner_id !== user.value.id; // Приклад: не автор може зв'язатися
+  return true; // Поки що дозволяємо завжди, якщо завдання завантажено
+});
+
+// Якщо потрібно отримати ID поточного користувача (припускаємо, що він є в JWT або окремому запиті)
+const user = ref(null); // Можна завантажувати дані користувача, якщо потрібно для логіки
+
+async function fetchCurrentUser() { // Опціональна функція
+  if (!jwt.value) return;
+  try {
+    // Запит до ендпоінта, який повертає дані поточного користувача
+    // const response = await axios.get('http://localhost:8000/users/me', {
+    //   headers: { Authorization: `Bearer ${jwt.value}` }
+    // });
+    // user.value = response.data;
+  } catch (error) {
+    console.error("Failed to fetch current user", error);
+  }
+}
+
+
 async function fetchTask() {
+  initialLoadingError.value = '';
+  if (!jwt.value) {
+    initialLoadingError.value = "Ви не авторизовані. Будь ласка, увійдіть до системи.";
+    // Можна додати затримку перед перенаправленням, щоб користувач встиг прочитати
+    setTimeout(() => router.push('/login'), 3000);
+    return;
+  }
   try {
     const response = await axios.get(`http://localhost:8000/tasks/${route.params.id}`, {
       headers: {
-        Authorization: `Bearer ${jwt.value}`, // Використовуємо JWT з localStorage
+        Authorization: `Bearer ${jwt.value}`,
       },
     });
     task.value = response.data;
   } catch (error) {
     console.error('Помилка при завантаженні завдання:', error);
-    errorMessage.value = "Помилка при завантаженні завдання.";
+    if (error.response && error.response.status === 404) {
+      initialLoadingError.value = "Завдання не знайдено.";
+    } else if (error.response && error.response.status === 401) {
+      initialLoadingError.value = "Помилка авторизації. Спробуйте увійти знову.";
+      localStorage.removeItem('jwtToken'); // Видаляємо невалідний токен
+      setTimeout(() => router.push('/login'), 3000);
+    }
+    else {
+      initialLoadingError.value = "Не вдалося завантажити завдання. Спробуйте оновити сторінку.";
+    }
   }
 }
 
-// Функція для взяття завдання
 async function takeTask() {
   if (!jwt.value) {
     errorMessage.value = "Не знайдено JWT користувача. Перевірте, чи ви авторизовані.";
+    successMessage.value = '';
     return;
   }
 
-  if (task.value.status === 'in_progress') {
-    errorMessage.value = "Завдання вже взято!";
-    return;
-  }
+  errorMessage.value = '';
+  successMessage.value = '';
+  isTakingTask.value = true;
 
   try {
     const response = await axios.post(`http://localhost:8000/tasks/${route.params.id}/take`, {}, {
       headers: {
-        Authorization: `Bearer ${jwt.value}`, // Використовуємо JWT
+        Authorization: `Bearer ${jwt.value}`,
       },
     });
 
-    // Оновлюємо локальний статус завдання після успішного виконання запиту
-    task.value.status = "in_progress";
+    if (task.value) {
+      task.value.status = "in_progress";
+      // Якщо бекенд повертає оновлене завдання, краще використовувати його:
+      // task.value = response.data.updated_task; (якщо така структура відповіді)
+    }
 
-    alert(`Ви взяли завдання: ${task.value.title}`);
+    successMessage.value = `Ви успішно взяли завдання: "${task.value?.title || ''}"!`;
+
+    setTimeout(() => {
+      successMessage.value = '';
+    }, 5000);
+
   } catch (error) {
     console.error('Помилка при взятті завдання:', error);
-    errorMessage.value = "Не вдалося взяти завдання.";
+    if (error.response && error.response.data && error.response.data.detail) {
+      errorMessage.value = error.response.data.detail;
+    } else {
+      errorMessage.value = "Не вдалося взяти завдання. Можливо, воно вже зайняте або сталася помилка.";
+    }
+    // Якщо завдання вже взято, оновимо статус локально, якщо можливо
+    if (error.response && error.response.status === 400 && task.value) {
+      // Можливо, бекенд повертає актуальний статус або це потрібно перезавантажити
+      // fetchTask(); // можна перезавантажити дані завдання
+    }
+  } finally {
+    isTakingTask.value = false;
   }
 }
 
 async function contactOwner() {
+  if (!task.value || !task.value.id) {
+    errorMessage.value = "Інформація про завдання недоступна для створення чату.";
+    return;
+  }
+  if (!jwt.value) {
+    errorMessage.value = "Ви не авторизовані.";
+    return;
+  }
+
+  errorMessage.value = '';
+  successMessage.value = '';
+  isCreatingChat.value = true;
+
   try {
     const response = await axios.post(`http://localhost:8000/chats/with-owner/${task.value.id}`, {}, {
       headers: {
@@ -87,30 +203,38 @@ async function contactOwner() {
     });
 
     const chatId = response.data.chat_id;
-
-    // Перенаправлення на конкретний чат
     router.push(`/chats/${chatId}`);
   } catch (error) {
     console.error('Не вдалося створити чат:', error);
-    errorMessage.value = "Не вдалося зв'язатися із замовником.";
+    if (error.response && error.response.data && error.response.data.detail) {
+      errorMessage.value = error.response.data.detail;
+    } else {
+      errorMessage.value = "Не вдалося зв'язатися із замовником. Спробуйте пізніше.";
+    }
+  } finally {
+    isCreatingChat.value = false;
   }
 }
 
-
-
-
-// Функція для переходу назад на головну
 function goBack() {
-  router.push('/main-page');
+  // Можна повернутися на попередню сторінку, якщо вона відома, або на головну
+  if (window.history.length > 2) { // Перевірка, чи є куди повертатися в історії
+    router.go(-1);
+  } else {
+    router.push('/main-page');
+  }
 }
 
-onMounted(fetchTask);
+onMounted(() => {
+  fetchCurrentUser(); // Опціонально, якщо потрібні дані користувача для логіки
+  fetchTask();
+});
 </script>
 
 <style scoped>
 .task-detail-page {
   padding: 2rem;
-  padding-top: 100px; /* Відступ для Navbar */
+  padding-top: 100px;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   background-image: url('../assets/img.jpg');
   background-size: cover;
@@ -118,25 +242,29 @@ onMounted(fetchTask);
   background-attachment: fixed;
   min-height: 100vh;
   color: #f0f0f0;
+  display: flex; /* Для центрування .task-card або .loading-text */
+  flex-direction: column;
+  align-items: center;
 }
 
 .back-btn {
-  display: inline-block; /* Щоб відступи працювали коректно і кнопка не займала всю ширину */
-  margin-bottom: 1.5rem; /* Відступ знизу перед заголовком картки */
-  background: none; /* Без фону */
-  border: none; /* Без рамки */
-  color: #b0b8c5; /* Світло-сіро-блакитний, добре для посилань */
-  font-size: 0.95rem; /* Розмір тексту */
-  font-weight: 500; /* Напівжирний */
+  display: inline-block;
+  margin-bottom: 1.5rem;
+  background: none;
+  border: none;
+  color: #b0b8c5;
+  font-size: 0.95rem;
+  font-weight: 500;
   cursor: pointer;
-  text-decoration: none; /* Без підкреслення за замовчуванням */
-  padding: 0.2rem 0; /* Невеликий вертикальний падінг для кращої клікабельності, без горизонтального */
+  text-decoration: none;
+  padding: 0.2rem 0;
   transition: color 0.2s ease;
+  align-self: flex-start; /* Вирівнювання кнопки "Назад" по лівому краю картки */
 }
 
 .back-btn:hover {
-  color: #ffffff; /* Білий колір при наведенні */
-  text-decoration: underline; /* Підкреслення при наведенні для ясності, що це посилання */
+  color: #ffffff;
+  text-decoration: underline;
 }
 
 .task-card {
@@ -148,8 +276,8 @@ onMounted(fetchTask);
   box-shadow: 0 6px 30px rgba(0, 0, 0, 0.4);
   border: 1px solid rgba(255, 255, 255, 0.12);
   width: 100%;
-  max-width: 600px;
-  margin: 0 auto; /* Центрування картки на сторінці */
+  max-width: 650px; /* Трохи ширше для кращого вигляду */
+  margin: 2rem auto; /* Відступи зверху/знизу та центрування */
   text-align: left;
 }
 
@@ -175,91 +303,110 @@ onMounted(fetchTask);
   margin-right: 0.6em;
 }
 
-/* Обгортка для кнопок, якщо вони мають бути в рядку */
-/* Якщо кнопки залишаються одна під одною, ця обгортка не потрібна в HTML,
-   а стилі для кнопок нижче вже враховують це */
-.action-buttons {
-  display: flex;
-  flex-direction: column; /* За замовчуванням кнопки одна під одною */
-  gap: 1rem;
+.action-buttons-container {
   margin-top: 2.2rem;
-}
-
-/* Медіа-запит для розташування кнопок в ряд на більших екранах, ЯКЩО ви додасте .action-buttons в HTML */
-@media (min-width: 500px) {
-  .action-buttons.horizontal { /* Додайте клас .horizontal до div.action-buttons для цього ефекту */
-    flex-direction: row;
-    justify-content: center;
-  }
-  .action-buttons.horizontal .take-btn,
-  .action-buttons.horizontal .contact-btn {
-    flex-grow: 1;
-    max-width: 240px;
-  }
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
 }
 
 .take-btn, .contact-btn {
-  display: block; /* Кожна кнопка на новому рядку (якщо не в .action-buttons.horizontal) */
-  width: 100%; /* Кнопки на всю ширину картки (якщо не в .action-buttons.horizontal) */
+  display: block;
+  width: 100%;
   padding: 0.9rem 1.5rem;
   font-size: 1rem;
   border-radius: 10px;
   cursor: pointer;
   font-weight: 600;
-  transition: background-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  transition: background-color 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease, opacity 0.2s ease;
   border: none;
   color: white;
   text-align: center;
   box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
 }
-.take-btn:hover, .contact-btn:hover {
+.take-btn:hover:not(:disabled), .contact-btn:hover:not(:disabled) {
   transform: translateY(-2px);
 }
 
 .take-btn {
-  /* margin-top залишено з вашого HTML, він перший після полів */
   background-color: #007AFF;
 }
-.take-btn:hover {
+.take-btn:hover:not(:disabled) {
   background-color: #005bb5;
   box-shadow: 0 4px 12px rgba(0, 123, 255, 0.4);
 }
+.take-btn:disabled {
+  background-color: #5a6268;
+  color: #adafaf;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
 
 .contact-btn {
-  margin-top: 1rem; /* Відступ зверху для другої кнопки */
   background-color: #9326C6;
 }
-.contact-btn:hover {
+.contact-btn:hover:not(:disabled) {
   background-color: #7a1fcf;
   box-shadow: 0 4px 12px rgba(147, 38, 198, 0.4);
 }
+.contact-btn:disabled {
+  background-color: #714883;
+  color: #adafaf;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
 
-.error-text {
-  color: #ff9a9a;
-  background-color: rgba(255, 82, 82, 0.15);
-  border: 1px solid rgba(255, 82, 82, 0.35);
+
+.message-text {
   padding: 0.9rem 1.2rem;
   border-radius: 8px;
   margin-top: 1.5rem;
+  margin-bottom: 0.5rem; /* Відступ знизу, якщо є кнопки після */
   text-align: center;
   font-size: 0.95rem;
+  width: 100%;
+  box-sizing: border-box;
 }
-p.error-text { /* Щоб повідомлення про помилку не розтягувалось на всю ширину, якщо воно коротке */
-  width: auto;
-  display: inline-block;
-  /* Для центрування inline-block елемента, його батьківський елемент (наприклад, .task-card)
-     мав би мати text-align: center; але картка має text-align: left.
-     Тому це правило може не центрувати так, як очікується, якщо текст помилки всередині картки.
-     Якщо помилка завжди має бути по центру картки, краще обгорнути її в div з text-align: center.
-     Поки що залишаємо так, як є у вашій структурі.
-  */
+
+.error-text {
+  color: #ffc2c2; /* Світліший червоний для тексту */
+  background-color: rgba(255, 82, 82, 0.2); /* Трохи насиченіший фон */
+  border: 1px solid rgba(255, 82, 82, 0.4);
+}
+
+.success-text {
+  color: #c2ffc2; /* Світліший зелений */
+  background-color: rgba(82, 200, 82, 0.2);
+  border: 1px solid rgba(82, 200, 82, 0.4);
+}
+
+.info-text {
+  color: #b0b8c5;
+  margin-top: 1rem;
+  text-align: center;
+  font-size: 0.95rem;
+  padding: 0.5rem;
+  background-color: rgba(80, 80, 100, 0.15);
+  border-radius: 6px;
 }
 
 
 .loading-text {
   text-align: center;
-  font-size: 1.1rem;
+  font-size: 1.2rem; /* Збільшено для кращої видимості */
   color: #b0b8c5;
-  margin-top: 3rem;
+  margin-top: 4rem; /* Збільшено відступ */
+  width: 100%;
+}
+.loading-text p {
+  margin-bottom: 1rem;
+}
+.loading-text .error-text { /* Щоб помилка завантаження була теж по центру */
+  display: inline-block; /* Або display: block; margin: 0 auto; */
+  width: auto;
+  max-width: 90%;
 }
 </style>

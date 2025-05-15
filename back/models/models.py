@@ -77,7 +77,9 @@ message = Table(
     Column("is_read", Boolean, default=False),
     Column("file_path", String, nullable=True),          # <--- Шлях до файлу на сервері (унікальне ім'я)
     Column("original_file_name", String, nullable=True), # <--- Оригінальне ім'я файлу
-    Column("mime_type", String, nullable=True)           # <--- MIME-тип файлу
+    Column("mime_type", String, nullable=True),          # <--- MIME-тип файлу
+    Column("updated_at", TIMESTAMP, nullable=True),
+    Column("is_edited", Boolean, default=False, nullable=True)
 )
 
 
