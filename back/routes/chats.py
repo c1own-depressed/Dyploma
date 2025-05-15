@@ -91,26 +91,57 @@ async def get_user_chats(
         session: AsyncSession = Depends(get_async_session),
         current_user: User = Depends(get_current_active_user_and_update_last_seen),
 ):
-    user_chats_select = await session.execute(
-        select(chat.c.id, chat.c.user1_id, chat.c.user2_id)
-        .where(or_(chat.c.user1_id == current_user.id, chat.c.user2_id == current_user.id))
-    )
-    user_chats_list = user_chats_select.mappings().fetchall()
-    if not user_chats_list: return []
+    # Запитуємо також поля userX_last_typing_at
+    user_chats_query = select(
+        chat.c.id,
+        chat.c.user1_id,
+        chat.c.user2_id,
+        chat.c.user1_last_typing_at,  # Додано
+        chat.c.user2_last_typing_at  # Додано
+    ).where(or_(chat.c.user1_id == current_user.id, chat.c.user2_id == current_user.id))
+
+    user_chats_select_result = await session.execute(user_chats_query)
+    user_chats_list = user_chats_select_result.mappings().fetchall()
+
+    if not user_chats_list:
+        return []
+
     chats_data = []
+    # Поріг часу, протягом якого вважається, що співрозмовник все ще друкує (наприклад, 5 секунд)
+    typing_threshold_time = datetime.utcnow() - timedelta(seconds=5)
+
     for chat_item_map in user_chats_list:
-        partner_id = chat_item_map["user1_id"] if chat_item_map["user2_id"] == current_user.id else chat_item_map["user2_id"]
+        partner_id = chat_item_map["user1_id"] if chat_item_map["user2_id"] == current_user.id else chat_item_map[
+            "user2_id"]
         partner_details = await get_partner_details(partner_id, session)
+
+        # Визначаємо, чи друкує партнер
+        partner_is_typing = False
+        if chat_item_map["user1_id"] == partner_id:  # Якщо партнер user1
+            if chat_item_map["user1_last_typing_at"] and \
+                    isinstance(chat_item_map["user1_last_typing_at"], datetime) and \
+                    chat_item_map["user1_last_typing_at"] > typing_threshold_time:
+                partner_is_typing = True
+        elif chat_item_map["user2_id"] == partner_id:  # Якщо партнер user2
+            if chat_item_map["user2_last_typing_at"] and \
+                    isinstance(chat_item_map["user2_last_typing_at"], datetime) and \
+                    chat_item_map["user2_last_typing_at"] > typing_threshold_time:
+                partner_is_typing = True
+
+        # Отримання останнього повідомлення (існуюча логіка)
         last_message_select = await session.execute(
-            select(message.c.content, message.c.created_at, message.c.sender_id, message.c.is_read, message.c.original_file_name)
+            select(message.c.content, message.c.created_at, message.c.sender_id, message.c.is_read,
+                   message.c.original_file_name)
             .where(message.c.chat_id == chat_item_map["id"])
             .order_by(message.c.created_at.desc()).limit(1)
         )
         last_msg_obj = last_message_select.mappings().first()
+
         last_message_snippet = None
         last_message_timestamp = None
         last_message_sent_by_me = None
         is_last_message_read_by_partner = None
+
         if last_msg_obj:
             content = last_msg_obj["content"]
             file_name_snippet = last_msg_obj["original_file_name"]
@@ -126,26 +157,40 @@ async def get_user_chats(
             created_at_dt = last_msg_obj["created_at"]
             if isinstance(created_at_dt, datetime):
                 last_message_timestamp = created_at_dt.isoformat() + "Z"
-            else:
-                last_message_timestamp = str(created_at_dt)
+            else:  # Fallback if it's somehow not a datetime object already
+                try:
+                    last_message_timestamp = datetime.fromisoformat(
+                        str(created_at_dt).replace("Z", "+00:00")).isoformat() + "Z"
+                except:
+                    last_message_timestamp = str(created_at_dt)
 
             last_message_sent_by_me = (last_msg_obj["sender_id"] == current_user.id)
             if last_message_sent_by_me:
                 is_last_message_read_by_partner = last_msg_obj["is_read"]
+
         unread_count_select = await session.execute(
             select(func.count(message.c.id))
-            .where((message.c.chat_id == chat_item_map["id"]) & (message.c.sender_id == partner_id) & (message.c.is_read == False))
+            .where((message.c.chat_id == chat_item_map["id"]) & (message.c.sender_id == partner_id) & (
+                        message.c.is_read == False))
         )
         unread_messages_count = unread_count_select.scalar_one_or_none() or 0
+
         chats_data.append({
-            "id": chat_item_map["id"], "partner_name": partner_details["username"],
-            "partner_is_online": partner_details["is_online"], "last_message_snippet": last_message_snippet,
-            "last_message_timestamp": last_message_timestamp, "last_message_sent_by_me": last_message_sent_by_me,
+            "id": chat_item_map["id"],
+            "partner_name": partner_details["username"],
+            "partner_is_online": partner_details["is_online"],
+            "partner_is_typing": partner_is_typing,  # <--- НОВЕ ПОЛЕ
+            "last_message_snippet": last_message_snippet,
+            "last_message_timestamp": last_message_timestamp,
+            "last_message_sent_by_me": last_message_sent_by_me,
             "is_last_message_read_by_partner": is_last_message_read_by_partner,
             "unread_messages_count": unread_messages_count,
         })
+
+    # Сортування (існуюча логіка)
     chats_data.sort(
-        key=lambda x: datetime.fromisoformat(x["last_message_timestamp"].replace("Z", "+00:00")) if x["last_message_timestamp"] else datetime.min.replace(tzinfo=timezone.utc),
+        key=lambda x: datetime.fromisoformat(x["last_message_timestamp"].replace("Z", "+00:00")) if x[
+            "last_message_timestamp"] else datetime.min.replace(tzinfo=timezone.utc),
         reverse=True
     )
     return chats_data

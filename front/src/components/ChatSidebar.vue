@@ -34,10 +34,13 @@
             </div>
           </div>
           <div class="chat-info-bottom-row">
-            <span class="last-message-snippet" :class="{ 'unread-snippet': chatItem.unread_messages_count > 0 && !chatItem.last_message_sent_by_me }">
+            <span v-if="chatItem.partner_is_typing" class="typing-indicator-sidebar">
+              пише...
+            </span>
+            <span v-else class="last-message-snippet" :class="{ 'unread-snippet': chatItem.unread_messages_count > 0 && !chatItem.last_message_sent_by_me }">
               {{ chatItem.last_message_snippet || 'Немає повідомлень' }}
             </span>
-            <span v-if="chatItem.unread_messages_count > 0" class="unread-badge">
+            <span v-if="chatItem.unread_messages_count > 0 && !chatItem.partner_is_typing" class="unread-badge">
               {{ chatItem.unread_messages_count }}
             </span>
           </div>
@@ -54,18 +57,19 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, onMounted, onUnmounted, watch } from 'vue'; // Додано watch
 import { useRouter, useRoute } from 'vue-router';
 import axios from 'axios';
 
 const jwt = localStorage.getItem('jwtToken');
 const router = useRouter();
-const route = useRoute();
+const route = useRoute(); // Зберігаємо route для використання в isActiveChat та watch
 const chats = ref([]);
 let intervalId = null;
 
 const isActiveChat = (chatId) => {
-  return route.params.id && parseInt(route.params.id) === chatId;
+  // route.params.id може бути undefined або строкою, тому потрібна перевірка та приведення типів
+  return route.params.id !== undefined && parseInt(route.params.id) === chatId;
 };
 
 const formatChatTimestamp = (timestamp) => {
@@ -82,7 +86,9 @@ const formatChatTimestamp = (timestamp) => {
   if (messageDate.toDateString() === today.toDateString()) {
     return timeString;
   } else if (messageDate.toDateString() === yesterday.toDateString()) {
-    return timeString;
+    // Замість часу для "вчора" можна показувати "Вчора"
+    // return "Вчора";
+    return timeString; // Або залишаємо час
   } else {
     const day = messageDate.getDate().toString().padStart(2, '0');
     const month = (messageDate.getMonth() + 1).toString().padStart(2, '0');
@@ -91,17 +97,27 @@ const formatChatTimestamp = (timestamp) => {
 };
 
 const fetchChats = async () => {
+  if (!jwt) { // Якщо немає токена, не робимо запит
+    console.warn("JWT token not found, skipping chat fetch.");
+    // Можливо, перенаправити на логін, якщо це ще не зроблено
+    // router.push('/login');
+    return;
+  }
   try {
     const res = await axios.get('http://localhost:8000/chats/', {
       headers: { Authorization: `Bearer ${jwt}` }
     });
+    // Порівнюємо глибше, щоб уникнути зайвих оновлень, якщо дані ті ж самі
+    // але це може бути надлишковим, якщо Vue достатньо розумний з refs
     if (JSON.stringify(chats.value) !== JSON.stringify(res.data)) {
       chats.value = res.data;
     }
   } catch (e) {
     console.error('Не вдалося завантажити чати', e);
     if (e.response && e.response.status === 401) {
-      router.push('/login');
+      // Обробка неавторизованого доступу
+      localStorage.removeItem('jwtToken'); // Видаляємо невалідний токен
+      router.push('/login'); // Перенаправляємо на сторінку входу
     }
   }
 };
@@ -117,17 +133,13 @@ const deleteChatOnBackend = async (chatId) => {
     await axios.delete(`http://localhost:8000/chats/${chatId}`, {
       headers: { Authorization: `Bearer ${jwt}` }
     });
-    // Оновити список чатів локально
     chats.value = chats.value.filter(chat => chat.id !== chatId);
-    // Якщо видалено активний чат, перенаправити
     if (isActiveChat(chatId)) {
-      router.push('/chats'); // Або на головну, або на інший відповідний маршрут
+      router.push('/chats');
     }
-    // Можна додати сповіщення про успішне видалення
     console.log(`Чат ${chatId} успішно видалено`);
   } catch (e) {
     console.error('Не вдалося видалити чат', e);
-    // Обробка помилок, наприклад, показати сповіщення користувачу
     if (e.response && e.response.data && e.response.data.detail) {
       alert(`Помилка видалення: ${e.response.data.detail}`);
     } else {
@@ -137,16 +149,26 @@ const deleteChatOnBackend = async (chatId) => {
 };
 
 onMounted(() => {
-  fetchChats();
-  intervalId = setInterval(fetchChats, 2000); // Розгляньте можливість використання WebSocket для оновлень в реальному часі
+  fetchChats(); // Перший запит при монтуванні
+  intervalId = setInterval(fetchChats, 2000); // Полінг кожні 2 секунди
 });
 
 onUnmounted(() => {
   clearInterval(intervalId);
 });
 
+// Додаємо watch для оновлення активного чату, якщо параметр маршруту змінюється
+// Це не стосується "пише...", але є корисним для коректної роботи isActiveChat
+watch(() => route.params.id, (newId, oldId) => {
+  // Цей watch допоможе оновити клас active-chat, якщо це потрібно
+  // Але для відображення "пише..." це не критично, оскільки дані приходять з fetchChats
+});
+
+
 function goToChat(chatId) {
-  router.push(`/chats/${chatId}`);
+  if (!isActiveChat(chatId)) { // Переходимо тільки якщо це не поточний активний чат
+    router.push(`/chats/${chatId}`);
+  }
 }
 
 function goHome() {
@@ -155,6 +177,8 @@ function goHome() {
 </script>
 
 <style scoped>
+/* ... (ваші існуючі стилі для .sidebar-container, .home-button, і т.д.) ... */
+
 .sidebar-container {
   padding: 8px 0 0 0;
   width: 300px;
@@ -192,14 +216,14 @@ function goHome() {
 .chat-preview {
   display: flex;
   align-items: center;
-  padding: 8px 12px; /* Зменшено паддінг, щоб вмістити кнопку */
+  padding: 8px 12px;
   margin: 0 8px;
   border-radius: 8px;
   cursor: pointer;
   transition: background-color 0.15s ease-in-out;
   min-height: 58px;
   box-sizing: border-box;
-  position: relative; /* Для позиціонування кнопки видалення */
+  position: relative;
 }
 .chat-preview:hover {
   background-color: #2b3745;
@@ -209,7 +233,8 @@ function goHome() {
 }
 .chat-preview.active-chat .partner-name,
 .chat-preview.active-chat .last-message-snippet,
-.chat-preview.active-chat .last-message-time {
+.chat-preview.active-chat .last-message-time,
+.chat-preview.active-chat .typing-indicator-sidebar { /* Додано для активного чату */
   color: #ffffff;
 }
 .chat-preview.active-chat .read-status-icons svg {
@@ -226,7 +251,7 @@ function goHome() {
   flex-direction: column;
   justify-content: center;
   overflow: hidden;
-  width: calc(100% - 25px); /* Залишити місце для кнопки видалення */
+  width: calc(100% - 25px);
 }
 
 .chat-info-top-row {
@@ -251,9 +276,6 @@ function goHome() {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-.chat-preview.active-chat .partner-name {
-  color: #ffffff;
 }
 
 .online-status-indicator {
@@ -292,6 +314,7 @@ function goHome() {
   align-items: center;
   margin-top: 2px;
   width: 100%;
+  min-height: 18px; /* Щоб рядок не стрибав по висоті */
 }
 
 .last-message-time {
@@ -334,6 +357,19 @@ function goHome() {
   font-weight: 500;
 }
 
+/* Новий стиль для індикатора "пише..." у сайдбарі */
+.typing-indicator-sidebar {
+  font-size: 13px;
+  color: #4F80AD; /* Можете підібрати колір, наприклад, синюватий або зеленуватий */
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-grow: 1;
+  text-align: left;
+  margin-right: 5px;
+}
+
 .unread-badge {
   background-color: #4a93d7;
   color: white;
@@ -345,14 +381,13 @@ function goHome() {
   text-align: center;
   line-height: 15px;
   flex-shrink: 0;
-  margin-left: auto; /* Змінено, щоб значок був праворуч, якщо кнопка видалення невидима */
+  margin-left: auto;
 }
 .chat-preview.active-chat .unread-badge {
   background-color: #ffffff;
   color: #4082c3;
 }
 
-/* Стилі для кнопки видалення */
 .delete-chat-button {
   background: none;
   border: none;
@@ -363,26 +398,23 @@ function goHome() {
   cursor: pointer;
   position: absolute;
   right: 10px;
-  top: 50%;
-  /* Тимчасово робимо більш значний зсув для перевірки */
-  transform: translateY(calc(-50% + 10px)); /* Збільшено зсув до 10px */
+  top: 60%;
+  transform: translateY(-50%); /* Центрування кнопки */
   opacity: 0;
   transition: opacity 0.2s ease-in-out, color 0.2s ease-in-out;
 }
 .chat-preview:hover .delete-chat-button {
-  opacity: 1; /* Показати при наведенні на .chat-preview */
+  opacity: 1;
 }
-
+.chat-preview.active-chat .delete-chat-button { /* Завжди показувати на активному чаті */
+  opacity: 1;
+  color: #d1d5db;
+}
 .delete-chat-button:hover {
-  color: #e53e3e; /* Червоний колір при наведенні на кнопку */
-}
-
-.chat-preview.active-chat .delete-chat-button {
-  color: #d1d5db; /* Колір на активному чаті */
-  opacity: 1; /* Завжди видима на активному чаті, якщо бажаєте */
+  color: #e53e3e;
 }
 .chat-preview.active-chat .delete-chat-button:hover {
-  color: #ffaaaa; /* Світліший червоний на активному чаті */
+  color: #ffaaaa;
 }
 
 
