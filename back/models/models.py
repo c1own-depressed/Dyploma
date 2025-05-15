@@ -62,6 +62,8 @@ chat = Table(
     Column("user1_id", Integer, ForeignKey("user.id"), nullable=False),  # замовник
     Column("user2_id", Integer, ForeignKey("user.id"), nullable=False),  # виконавець
     Column("created_at", TIMESTAMP, default=datetime.utcnow),
+    Column("user1_last_typing_at", TIMESTAMP, nullable=True),
+    Column("user2_last_typing_at", TIMESTAMP, nullable=True),
 )
 
 message = Table(

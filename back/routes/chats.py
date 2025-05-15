@@ -150,20 +150,46 @@ async def get_user_chats(
     )
     return chats_data
 
-@router.get("/{chat_id}")
+@router.get("/{chat_id}") # Цей ендпоінт вже є
 async def get_chat_by_id(
     chat_id: int,
     session: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(get_current_active_user_and_update_last_seen),
 ):
-    result = await session.execute(select(chat).where(chat.c.id == chat_id))
+    result = await session.execute(
+        select(
+            chat.c.id,
+            chat.c.user1_id,
+            chat.c.user2_id,
+            chat.c.user1_last_typing_at, # Додано
+            chat.c.user2_last_typing_at  # Додано
+        ).where(chat.c.id == chat_id)
+    )
     chat_row = result.mappings().first()
     if not chat_row: raise HTTPException(status_code=404, detail="Chat not found")
-    if current_user.id not in [chat_row["user1_id"], chat_row["user2_id"]]: raise HTTPException(status_code=403, detail="Access denied")
-    partner_id = chat_row["user1_id"] if chat_row["user2_id"] == current_user.id else chat_row["user2_id"]
-    partner_details = await get_partner_details(partner_id, session)
-    return {"id": chat_row["id"], "partner_name": partner_details["username"], "partner_is_online": partner_details["is_online"]}
+    if current_user.id not in [chat_row["user1_id"], chat_row["user2_id"]]:
+        raise HTTPException(status_code=403, detail="Access denied")
 
+    partner_id = chat_row["user1_id"] if chat_row["user2_id"] == current_user.id else chat_row["user2_id"]
+    partner_details = await get_partner_details(partner_id, session) # Це вже є
+
+    partner_is_typing = False
+    # Поріг часу, протягом якого вважається, що співрозмовник все ще друкує (наприклад, 5 секунд)
+    typing_threshold_time = datetime.utcnow() - timedelta(seconds=5)
+
+    if chat_row["user1_id"] == partner_id:
+        if chat_row["user1_last_typing_at"] and chat_row["user1_last_typing_at"] > typing_threshold_time:
+            partner_is_typing = True
+    elif chat_row["user2_id"] == partner_id:
+        if chat_row["user2_last_typing_at"] and chat_row["user2_last_typing_at"] > typing_threshold_time:
+            partner_is_typing = True
+
+    return {
+        "id": chat_row["id"],
+        "partner_name": partner_details["username"],
+        "partner_is_online": partner_details["is_online"],
+        "partner_is_typing": partner_is_typing # Нове поле
+    }
 
 @router.post("/{chat_id}/messages")
 async def send_message_endpoint(
@@ -350,3 +376,34 @@ async def delete_chat_endpoint(
     await session.commit()
 
     return {"status": "success", "message": "Chat deleted successfully"}
+
+@router.post("/{chat_id}/typing", status_code=200)
+async def user_is_typing(
+    chat_id: int,
+    session: AsyncSession = Depends(get_async_session),
+    current_user: User = Depends(get_current_active_user_and_update_last_seen),
+):
+    chat_select_stmt = select(chat).where(chat.c.id == chat_id)
+    chat_result = await session.execute(chat_select_stmt)
+    chat_row = chat_result.mappings().first()
+
+    if not chat_row:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    if current_user.id not in [chat_row["user1_id"], chat_row["user2_id"]]:
+        raise HTTPException(status_code=403, detail="Not authorized for this chat")
+
+    now_utc = datetime.utcnow()
+    update_values = {}
+    if chat_row["user1_id"] == current_user.id:
+        update_values = {"user1_last_typing_at": now_utc}
+    elif chat_row["user2_id"] == current_user.id:
+        update_values = {"user2_last_typing_at": now_utc}
+
+    if update_values:
+        stmt = update(chat).where(chat.c.id == chat_id).values(**update_values)
+        await session.execute(stmt)
+        await session.commit()
+        return {"status": "success", "message": "Typing status updated"}
+
+    raise HTTPException(status_code=400, detail="Could not update typing status")

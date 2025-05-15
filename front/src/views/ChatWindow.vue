@@ -59,6 +59,10 @@
       </div>
     </div>
 
+    <div v-if="partnerIsTyping && chatId" class="typing-indicator">
+      {{ partnerName }} пише...
+    </div>
+
     <div class="input-area">
       <button @click="triggerFileInput" class="attach-file-button" title="Прикріпити файл">
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
@@ -71,7 +75,7 @@
 
       <input
           v-model="currentMessageText"
-          @keyup.enter="handleSendMessage"
+          @input="handleUserTypingDebounced" @keyup.enter="handleSendMessage"
           type="text"
           class="chat-input"
           placeholder="Напишіть повідомлення..."
@@ -105,6 +109,11 @@ let updateInterval = null
 
 const fileUploadInput = ref(null);
 const selectedFileForUpload = ref(null);
+
+// --- Додано для індикатора "пише..." ---
+const partnerIsTyping = ref(false);
+let typingApiCallTimer = null; // для debounce/throttle логіки
+// --- Кінець доданого для індикатора "пише..." ---
 
 const formatMessageTime = (timestamp) => {
   if (!timestamp) return '';
@@ -144,6 +153,63 @@ async function markMessagesAsReadOnServer() {
   }
 }
 
+// --- Додано логіку для індикатора "пише..." ---
+watch(currentMessageText, (newValue, oldValue) => {
+  if (!chatId.value) return;
+
+  // Надсилаємо статус, якщо починаємо друкувати або продовжуємо після того, як поле було порожнім
+  if (newValue.trim() !== "" && (!oldValue || oldValue.trim() === "")) {
+    sendTypingStatus(); // Негайно надсилаємо перший сигнал
+  }
+  // Дебаунсинг для наступних сигналів під час друку
+  handleUserTypingDebounced();
+});
+
+const handleUserTypingDebounced = () => {
+  if (typingApiCallTimer) {
+    clearTimeout(typingApiCallTimer);
+  }
+  typingApiCallTimer = setTimeout(() => {
+    if (currentMessageText.value.trim() !== "" && chatId.value) {
+      sendTypingStatus();
+    }
+  }, 800); // Надсилати статус кожні 800ms, якщо користувач продовжує друкувати
+};
+
+async function sendTypingStatus() {
+  if (!chatId.value) return;
+  try {
+    await axios.post(`http://localhost:8000/chats/${chatId.value}/typing`, {}, {
+      headers: { Authorization: `Bearer ${jwt}` }
+    });
+  } catch (err) {
+    console.error('Помилка надсилання статусу набору тексту:', err);
+  }
+}
+
+async function fetchChatDetails() {
+  if (!chatId.value) {
+    partnerIsTyping.value = false;
+    return;
+  }
+  try {
+    const res = await axios.get(`http://localhost:8000/chats/${chatId.value}`, {
+      headers: { Authorization: `Bearer ${jwt}` }
+    });
+    // partnerName.value = res.data.partner_name; // Це вже оновлюється в loadInitialChatMessages
+    if (partnerIsTyping.value !== res.data.partner_is_typing) {
+      partnerIsTyping.value = res.data.partner_is_typing;
+    }
+  } catch (err) {
+    console.error('Помилка при завантаженні деталей чату (статус набору):', err.response || err);
+    if (partnerIsTyping.value) { // Скидаємо тільки якщо було true, щоб уникнути зайвих оновлень
+      partnerIsTyping.value = false;
+    }
+  }
+}
+// --- Кінець доданої логіки для індикатора "пише..." ---
+
+
 watch(() => route.params.id, async (newId) => {
   if (updateInterval) clearInterval(updateInterval);
   chatId.value = newId;
@@ -152,6 +218,7 @@ watch(() => route.params.id, async (newId) => {
   currentMessageText.value = "";
   selectedFileForUpload.value = null;
   if (fileUploadInput.value) fileUploadInput.value.value = '';
+  partnerIsTyping.value = false; // <--- Скидання індикатора
 
   if (newId) {
     await loadInitialChatMessages();
@@ -172,11 +239,15 @@ onMounted(async () => {
 onUnmounted(() => {
   if (updateInterval) clearInterval(updateInterval);
   document.removeEventListener('visibilitychange', handleVisibilityChange);
+  if (typingApiCallTimer) clearTimeout(typingApiCallTimer); // Очистка таймера при розмонтуванні
 });
 
 function handleVisibilityChange() {
   if (!document.hidden && chatId.value) {
     markMessagesAsReadOnServer();
+    // Можливо, варто також викликати fetchChatDetails, щоб оновити статус "пише"
+    // якщо вкладка була неактивна деякий час
+    fetchChatDetails();
   }
 }
 
@@ -184,12 +255,14 @@ async function loadInitialChatMessages() {
   if (!chatId.value) return;
   loading.value = true;
   try {
+    // Одночасно запитуємо інформацію про чат (включаючи статус друку) та повідомлення
     const chatInfoPromise = axios.get(`http://localhost:8000/chats/${chatId.value}`, {headers: {Authorization: `Bearer ${jwt}`}});
     const messagesPromise = axios.get(`http://localhost:8000/chats/${chatId.value}/messages?page=1&page_size=${MESSAGES_PER_PAGE}`, {headers: {Authorization: `Bearer ${jwt}`}});
 
-    const [chatInfo, messagesRes] = await Promise.all([chatInfoPromise, messagesPromise]);
+    const [chatInfoRes, messagesRes] = await Promise.all([chatInfoPromise, messagesPromise]);
 
-    partnerName.value = chatInfo.data.partner_name;
+    partnerName.value = chatInfoRes.data.partner_name;
+    partnerIsTyping.value = chatInfoRes.data.partner_is_typing; // Оновлюємо статус друку
     messages.value = messagesRes.data;
 
     await nextTick();
@@ -201,6 +274,7 @@ async function loadInitialChatMessages() {
       chatId.value = null;
       partnerName.value = "";
       messages.value = [];
+      partnerIsTyping.value = false; // Скидання
     }
   } finally {
     loading.value = false;
@@ -235,6 +309,10 @@ const handleSendMessage = async () => {
     return;
   }
 
+  // Очищаємо таймер та повідомляємо, що перестали друкувати (опціонально, якщо сервер сам не скидає швидко)
+  if (typingApiCallTimer) clearTimeout(typingApiCallTimer);
+  // Можна додати sendStoppedTypingStatus() якщо є такий ендпоінт, або покластись на серверний таймаут
+
   const formData = new FormData();
   if (textToSend) {
     formData.append('text', textToSend);
@@ -250,7 +328,8 @@ const handleSendMessage = async () => {
         {headers: {Authorization: `Bearer ${jwt}`}}
     );
     messages.value.push(response.data);
-    currentMessageText.value = "";
+    currentMessageText.value = ""; // Це викличе watch, який може надіслати typing статус, якщо логіка не ідеальна.
+    // Поки що залишимо так, бо поле стає порожнім.
     clearSelectedFile();
     await nextTick();
     scrollToBottom();
@@ -281,11 +360,11 @@ const loadMoreMessages = async () => {
       await nextTick();
       messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight - oldScrollHeight;
     } else {
-      page.value--;
+      page.value--; // Якщо даних більше немає, зменшуємо сторінку назад
     }
   } catch (err) {
     console.error('Помилка при завантаженні старих повідомлень:', err.response || err);
-    page.value--;
+    page.value--; // У випадку помилки також повертаємо номер сторінки
   } finally {
     loading.value = false;
   }
@@ -293,33 +372,58 @@ const loadMoreMessages = async () => {
 
 async function fetchLatestMessagesAndUpdate() {
   if (!chatId.value || document.hidden) return;
+
+  // Спочатку отримуємо деталі чату (включно зі статусом набору)
+  await fetchChatDetails(); // <--- Додано виклик
+
   try {
     const res = await axios.get(`http://localhost:8000/chats/${chatId.value}/messages?page=1&page_size=${MESSAGES_PER_PAGE}`, {headers: {Authorization: `Bearer ${jwt}`}});
     const latestMessagesOnServer = res.data;
     let newMessagesFound = false;
+    let readStatusChanged = false; // Прапорець для відстеження змін статусу прочитання
+
     latestMessagesOnServer.forEach(serverMsg => {
       const existingMsgIndex = messages.value.findIndex(m => m.id === serverMsg.id);
       if (existingMsgIndex !== -1) {
+        // Перевіряємо, чи змінився статус is_read
         if (messages.value[existingMsgIndex].is_read !== serverMsg.is_read) {
           messages.value[existingMsgIndex].is_read = serverMsg.is_read;
+          readStatusChanged = true; // Позначаємо, що статус змінився
         }
       } else {
         messages.value.push(serverMsg);
         newMessagesFound = true;
       }
     });
+
     if (newMessagesFound) {
       messages.value.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
       await nextTick();
       const container = messagesContainer.value;
-      if (container && (container.scrollHeight - container.scrollTop <= container.clientHeight + 200 || latestMessagesOnServer.some(m => m.sender === 'me' && !messages.value.slice(0, -latestMessagesOnServer.length).find(lm => lm.id === m.id)))) {
+      // Логіка для автоскролу, якщо користувач близько до низу або це його власне нове повідомлення
+      const isNearBottom = container && (container.scrollHeight - container.scrollTop <= container.clientHeight + 200);
+      const myNewMessage = latestMessagesOnServer.some(m => m.sender === 'me' && !messages.value.slice(0, -latestMessagesOnServer.length).find(lm => lm.id === m.id));
+
+      if (isNearBottom || myNewMessage) {
         scrollToBottom();
       }
+    } else if (readStatusChanged) {
+      // Якщо нових повідомлень немає, але статус прочитання змінився,
+      // Vue може не оновити DOM, тому примусово оновимо, якщо потрібно (хоча ref має це робити)
+      // messages.value = [...messages.value]; // Це може бути зайвим
+      await nextTick(); // Даємо Vue час оновити DOM
     }
-    const hasNewUnreadFromOther = latestMessagesOnServer.some(m => m.sender === 'other' && !messages.value.find(lm => lm.id === m.id)?.is_read);
+
+    // Перевірка на нові непрочитані повідомлення від співрозмовника для позначення їх як прочитаних
+    const hasNewUnreadFromOther = latestMessagesOnServer.some(m =>
+        m.sender === 'other' &&
+        !messages.value.find(localMsg => localMsg.id === m.id)?.is_read // Перевіряємо саме is_read локального повідомлення
+    );
+
     if (hasNewUnreadFromOther && !document.hidden) {
       await markMessagesAsReadOnServer();
     }
+
   } catch (err) {
     console.error('Помилка при опитуванні нових повідомлень:', err.response || err);
   }
@@ -327,8 +431,8 @@ async function fetchLatestMessagesAndUpdate() {
 
 function startPolling() {
   if (updateInterval) clearInterval(updateInterval);
-  fetchLatestMessagesAndUpdate();
-  updateInterval = setInterval(fetchLatestMessagesAndUpdate, 3000);
+  fetchLatestMessagesAndUpdate(); // Перший виклик одразу
+  updateInterval = setInterval(fetchLatestMessagesAndUpdate, 2000); // Зменшено інтервал для частішого оновлення статусу "пише"
 }
 
 const scrollToBottom = () => {
@@ -339,218 +443,159 @@ const scrollToBottom = () => {
 };
 const getFileExtension = (filename) => {
   if (!filename || typeof filename !== 'string') return '';
-  // Забирає все після останньої крапки, приводить до нижнього регістру
   return filename.slice((filename.lastIndexOf(".") - 1 >>> 0) + 2).toLowerCase();
 };
 
 const getFileDisplayInfo = (originalFileName, mimeType) => {
   const extension = getFileExtension(originalFileName);
-  let icon = '📄'; // Іконка за замовчуванням (документ)
-  let description = 'Файл'; // Опис за замовчуванням
+  let icon = '📄';
+  let description = 'Файл';
 
   if (extension) {
     switch (extension) {
-      case 'pdf':
-        icon = '📜'; // Іконка для PDF (сувій)
-        description = 'PDF Документ';
-        break;
-      case 'doc':
-      case 'docx':
-        icon = '📄'; // Іконка для Word (документ)
-        description = 'Документ Word';
-        break;
-      case 'xls':
-      case 'xlsx':
-        icon = '📊'; // Іконка для Excel (графік)
-        description = 'Документ Excel';
-        break;
-      case 'ppt':
-      case 'pptx':
-        icon = '🖥️'; // Іконка для PowerPoint (монітор/презентація)
-        description = 'Презентація';
-        break;
-      case 'zip':
-      case 'rar':
-      case '7z':
-        icon = '🗜️'; // Іконка для архіву (лещата)
-        description = 'Архів';
-        break;
-      case 'txt':
-        icon = '📝'; // Іконка для текстового файлу (нотатки)
-        description = 'Текстовий файл';
-        break;
-      case 'mp3':
-      case 'wav':
-      case 'ogg':
-      case 'flac':
-        icon = '🎵'; // Іконка для аудіо (нота)
-        description = 'Аудіофайл';
-        break;
-      case 'mp4':
-      case 'avi':
-      case 'mov':
-      case 'mkv':
-      case 'webm':
-        icon = '🎞️'; // Іконка для відео (кіноплівка)
-        description = 'Відеофайл';
-        break;
-      case 'jpg': // Ці розширення вже обробляються як зображення, але для повноти
-      case 'jpeg':
-      case 'png':
-      case 'gif':
-      case 'bmp':
-      case 'webp':
-        icon = '🖼️'; // Іконка для зображення (картина в рамці)
-        description = 'Зображення';
-        break;
+      case 'pdf': icon = '📜'; description = 'PDF Документ'; break;
+      case 'doc': case 'docx': icon = '📄'; description = 'Документ Word'; break;
+      case 'xls': case 'xlsx': icon = '📊'; description = 'Документ Excel'; break;
+      case 'ppt': case 'pptx': icon = '🖥️'; description = 'Презентація'; break;
+      case 'zip': case 'rar': case '7z': icon = '🗜️'; description = 'Архів'; break;
+      case 'txt': icon = '📝'; description = 'Текстовий файл'; break;
+      case 'mp3': case 'wav': case 'ogg': case 'flac': icon = '🎵'; description = 'Аудіофайл'; break;
+      case 'mp4': case 'avi': case 'mov': case 'mkv': case 'webm': icon = '🎞️'; description = 'Відеофайл'; break;
+      case 'jpg': case 'jpeg': case 'png': case 'gif': case 'bmp': case 'webp': icon = '🖼️'; description = 'Зображення'; break;
       default:
-        // Якщо розширення невідоме, спробуємо визначити за MIME-типом
         if (mimeType) {
-          if (mimeType.startsWith('audio/')) {
-            icon = '🎵'; description = 'Аудіофайл';
-          } else if (mimeType.startsWith('video/')) {
-            icon = '🎞️'; description = 'Відеофайл';
-          } else if (mimeType.startsWith('text/')) {
-            icon = '📝'; description = 'Текстовий файл';
-          } else if (mimeType === 'application/pdf') {
-            icon = '📜'; description = 'PDF Документ';
-          } else if (mimeType.includes('zip')) { // Більш загальне для архівів
-            icon = '🗜️'; description = 'Архів';
-          }
+          if (mimeType.startsWith('audio/')) { icon = '🎵'; description = 'Аудіофайл'; }
+          else if (mimeType.startsWith('video/')) { icon = '🎞️'; description = 'Відеофайл'; }
+          else if (mimeType.startsWith('text/')) { icon = '📝'; description = 'Текстовий файл'; }
+          else if (mimeType === 'application/pdf') { icon = '📜'; description = 'PDF Документ'; }
+          else if (mimeType.includes('zip')) { icon = '🗜️'; description = 'Архів'; }
         }
-        // Якщо опис все ще "Файл", і є розширення, додамо його
-        if (description === 'Файл' && extension) {
-          description = `Файл ${extension.toUpperCase()}`;
-        }
+        if (description === 'Файл' && extension) { description = `Файл ${extension.toUpperCase()}`; }
     }
-  } else if (mimeType) { // Якщо немає розширення, використовуємо MIME-тип
-    if (mimeType.startsWith('audio/')) {
-      icon = '🎵'; description = 'Аудіофайл';
-    } else if (mimeType.startsWith('video/')) {
-      icon = '🎞️'; description = 'Відеофайл';
-    } else if (mimeType.startsWith('text/')) {
-      icon = '📝'; description = 'Текстовий документ';
-    } else if (mimeType === 'application/pdf') {
-      icon = '📜'; description = 'PDF Документ';
-    } else if (mimeType.includes('wordprocessingml') || mimeType === 'application/msword') {
-      icon = '📄'; description = 'Документ Word';
-    } else if (mimeType.includes('spreadsheetml') || mimeType === 'application/vnd.ms-excel') {
-      icon = '📊'; description = 'Документ Excel';
-    } else if (mimeType.includes('presentationml') || mimeType === 'application/vnd.ms-powerpoint') {
-      icon = '🖥️'; description = 'Презентація';
-    } else if (mimeType.includes('zip')) {
-      icon = '🗜️'; description = 'Архів';
-    }
+  } else if (mimeType) {
+    if (mimeType.startsWith('audio/')) { icon = '🎵'; description = 'Аудіофайл'; }
+    else if (mimeType.startsWith('video/')) { icon = '🎞️'; description = 'Відеофайл'; }
+    else if (mimeType.startsWith('text/')) { icon = '📝'; description = 'Текстовий документ'; }
+    else if (mimeType === 'application/pdf') { icon = '📜'; description = 'PDF Документ'; }
+    else if (mimeType.includes('wordprocessingml') || mimeType === 'application/msword') { icon = '📄'; description = 'Документ Word'; }
+    else if (mimeType.includes('spreadsheetml') || mimeType === 'application/vnd.ms-excel') { icon = '📊'; description = 'Документ Excel'; }
+    else if (mimeType.includes('presentationml') || mimeType === 'application/vnd.ms-powerpoint') { icon = '🖥️'; description = 'Презентація'; }
+    else if (mimeType.includes('zip')) { icon = '🗜️'; description = 'Архів'; }
   }
-
   return { icon, description };
 };
 </script>
 
-
 <style scoped>
+/* ... (ваші існуючі стилі) ... */
+
+.typing-indicator {
+  font-style: italic;
+  color: #cccccc; /* Або інший колір, який підходить до вашої теми */
+  padding: 0px 0px 8px 5px; /* Відступи, щоб було акуратно */
+  font-size: 0.85em;
+  height: 18px; /* Зафіксувати висоту, щоб не було стрибків контенту */
+  opacity: 0.7;
+  transition: opacity 0.3s ease-in-out; /* Плавна поява/зникнення */
+}
+
 .chat-container {
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 20px; /* Трохи зменшено padding */
-  background-image: url('../assets/img.jpg'); /* Переконайтесь, що шлях правильний */
+  padding: 20px;
+  background-image: url('../assets/img.jpg');
   background-size: cover;
   background-position: center;
-  backdrop-filter: blur(8px); /* Трохи зменшено blur */
+  backdrop-filter: blur(8px);
   border-radius: 0;
-  box-shadow: 0 0 30px rgba(0, 0, 0, 0.3); /* Трохи зменшено тінь */
+  box-shadow: 0 0 30px rgba(0, 0, 0, 0.3);
 }
 
 .chat-header {
-  font-size: 18px; /* Трохи зменшено шрифт */
+  font-size: 18px;
   font-weight: bold;
-  margin-bottom: 15px; /* Трохи зменшено відступ */
+  margin-bottom: 15px;
   color: white;
-  text-shadow: 0 0 5px rgba(0, 0, 0, 0.7); /* Тінь для кращої читабельності */
+  text-shadow: 0 0 5px rgba(0, 0, 0, 0.7);
 }
 
 .messages {
   flex: 1;
   overflow-y: auto;
-  padding-right: 10px; /* Для скролбару, якщо він з'явиться */
+  padding-right: 10px;
   display: flex;
   flex-direction: column;
-  gap: 8px; /* Зменшено gap */
+  gap: 8px;
 }
 
-/* Новий контейнер для кожного повідомлення, щоб вирівнювати бульку */
 .message-item {
   display: flex;
-  flex-direction: column; /* Текст і час будуть один під одним в бульці */
-  max-width: 75%; /* Максимальна ширина для всього блоку повідомлення */
+  flex-direction: column;
+  max-width: 75%;
 }
 
 .align-right {
-  align-self: flex-end; /* Вирівнює весь .message-item праворуч */
+  align-self: flex-end;
 }
 
 .align-left {
-  align-self: flex-start; /* Вирівнює весь .message-item ліворуч */
+  align-self: flex-start;
 }
 
 .message-bubble {
   padding: 8px 12px;
-  border-radius: 16px; /* Більш заокруглені кути */
+  border-radius: 16px;
   font-size: 14px;
   line-height: 1.4;
   word-break: break-word;
   color: white;
-  display: inline-block; /* Щоб булька обгортала контент */
-  /* max-width не потрібен тут, якщо він є на .message-item */
+  display: inline-block;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
-  position: relative; /* Для можливих "хвостиків" або позначок */
+  position: relative;
 }
 
 .message-text {
-  /* Якщо потрібно, можна додати відступ знизу, якщо час розташований під текстом */
-  margin-bottom: 2px; /* Невеликий відступ між текстом та часом */
+  margin-bottom: 2px;
 }
 
 .message-time {
-  font-size: 0.68rem; /* Дуже маленький шрифт для часу, як у Telegram */
-  color: rgba(255, 255, 255, 0.65); /* Світло-сірий, напівпрозорий */
-  text-align: right; /* Час завжди праворуч всередині бульки */
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.65);
+  text-align: right;
   margin-top: 3px;
-  /* display: block; */ /* Щоб час був на новому рядку, якщо текст довгий - вже є flex-direction: column */
 }
 
 .from-me {
-  background-color: #2c63a6; /* Синій колір для моїх повідомлень */
-  /* "Хвостик" для мого повідомлення */
+  background-color: #2c63a6;
   border-bottom-right-radius: 5px;
 }
 
 .from-me .message-time {
-  color: rgba(220, 240, 255, 0.75); /* Спеціальний колір часу для моїх повідомлень */
+  color: rgba(220, 240, 255, 0.75);
 }
 
 .from-other {
-  background-color: #9326c6; /* Темно-сірий для чужих повідомлень */
-  /* "Хвостик" для чужого повідомлення */
+  background-color: #9326c6;
   border-bottom-left-radius: 5px;
 }
 
 .from-other .message-time {
-  color: rgba(200, 200, 200, 0.7); /* Спеціальний колір часу для чужих повідомлень */
+  color: rgba(200, 200, 200, 0.7);
 }
 
-.input-container {
-  margin-top: 15px;
+.input-area {
   display: flex;
   gap: 8px;
+  margin-top: 10px; /* Зменшено відступ, бо є typing-indicator */
+  align-items: center;
 }
 
 .chat-input {
   flex-grow: 1;
   padding: 10px 15px;
-  border-radius: 18px; /* Більш заокруглений інпут */
-  background-color: rgba(40, 40, 40, 0.75); /* Напівпрозорий темний */
+  border-radius: 18px;
+  background-color: rgba(40, 40, 40, 0.75);
   color: white;
   border: 1px solid rgba(255, 255, 255, 0.2);
   outline: none;
@@ -568,25 +613,23 @@ const getFileDisplayInfo = (originalFileName, mimeType) => {
   color: #a0a0a0;
 }
 
-/* Світліший placeholder */
-
 .empty-state {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #aaa; /* Світліший колір */
-  font-size: 17px; /* Трохи менший шрифт */
+  color: #aaa;
+  font-size: 17px;
   height: 100%;
 }
 
 .send-button {
-  padding: 10px 18px; /* Змінено padding */
+  padding: 10px 18px;
   background-color: #007aff;
   color: white;
   border: none;
-  border-radius: 18px; /* Більш заокруглена кнопка */
+  border-radius: 18px;
   cursor: pointer;
-  font-weight: 500; /* Менш жирний */
+  font-weight: 500;
   font-size: 14px;
   transition: background-color 0.2s;
   flex-shrink: 0;
@@ -596,7 +639,6 @@ const getFileDisplayInfo = (originalFileName, mimeType) => {
   background-color: #005bb5;
 }
 
-/* Стилізація скролбару (опціонально, для webkit браузерів) */
 .messages::-webkit-scrollbar {
   width: 5px;
 }
@@ -618,65 +660,54 @@ const getFileDisplayInfo = (originalFileName, mimeType) => {
 .message-meta {
   display: flex;
   align-items: center;
-  font-size: 0.68rem; /* Збережено з попереднього разу */
-  color: rgba(255, 255, 255, 0.65); /* Збережено */
-  margin-top: 3px; /* Збережено */
-  /* text-align: right; -- не потрібно, якщо використовується flex для вирівнювання */
-  align-self: flex-end; /* Вирівнює весь блок часу та статусу праворуч всередині бульки */
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.65);
+  margin-top: 3px;
+  align-self: flex-end;
 }
 
 .message-time {
-  margin-right: 5px; /* Відступ між часом та статусом */
+  margin-right: 5px;
 }
 
 .message-status svg {
-  width: 16px; /* Розмір галочок */
+  width: 16px;
   height: 16px;
-  stroke-width: 1.5; /* Товщина лінії галочок */
-  fill: none; /* Без заливки */
-  vertical-align: middle; /* Для кращого вирівнювання з текстом часу */
+  stroke-width: 1.5;
+  fill: none;
+  vertical-align: middle;
 }
 
-/* Стилі для моїх повідомлень */
 .from-me .message-meta {
-  color: rgba(220, 240, 255, 0.75); /* Колір часу для моїх повідомлень */
+  color: rgba(220, 240, 255, 0.75);
 }
 
 .from-me .message-status .sent-receipt {
-  stroke: rgba(220, 240, 255, 0.75); /* Сірувата галочка (відправлено) */
+  stroke: rgba(220, 240, 255, 0.75);
 }
 
 .from-me .message-status .read-receipt {
-  /* stroke: #4FC3F7; Яскраво-синій, як у Telegram Web */
-  stroke: #34B7F1; /* Інший варіант синього для прочитаних */
+  stroke: #34B7F1;
 }
 
-.from-me .message-status .read-receipt path:nth-child(2) {
-  /* Можна трохи змістити другу галочку, якщо потрібно */
-  /* transform: translateX(3px); */
-}
-
-
-/* Стилі для чужих повідомлень (якщо потрібно буде щось специфічне для .message-meta) */
 .from-other .message-meta {
   color: rgba(200, 200, 200, 0.7);
 }
 
 .message-file {
-  margin-top: 6px; /* Відступ, якщо є текст над файлом */
-  /* Можна додати фон або рамку для блоку файлу */
+  margin-top: 6px;
 }
 
 .file-link {
-  display: inline-flex; /* Для вирівнювання іконки та тексту */
+  display: inline-flex;
   align-items: center;
   padding: 8px 10px;
   border-radius: 8px;
   text-decoration: none;
-  color: #e1e3e6; /* Колір посилання */
-  background-color: rgba(255, 255, 255, 0.05); /* Легкий фон */
+  color: #e1e3e6;
+  background-color: rgba(255, 255, 255, 0.05);
   transition: background-color 0.2s;
-  max-width: 100%; /* Щоб посилання не виходило за межі бульки */
+  max-width: 100%;
 }
 
 .file-link:hover {
@@ -684,30 +715,24 @@ const getFileDisplayInfo = (originalFileName, mimeType) => {
   text-decoration: underline;
 }
 
-/* Кольори для своїх/чужих файлів */
 .from-me .file-link {
-  /* background-color: rgba(var(--my-message-bg-rgb), 0.8); */ /* Якщо є CSS змінна */
   color: #e0f0ff;
 }
 
 .from-other .file-link {
-  /* background-color: rgba(var(--other-message-bg-rgb), 0.8); */
   color: #d0d8e0;
 }
 
-
 .file-image-preview {
-  max-width: 220px; /* Максимальна ширина прев'ю */
-  max-height: 180px; /* Максимальна висота прев'ю */
+  max-width: 220px;
+  max-height: 180px;
   border-radius: 6px;
-  object-fit: cover; /* Щоб зображення гарно вписувалось */
-  cursor: pointer; /* Вказує, що можна клікнути для повного розміру */
+  object-fit: cover;
+  cursor: pointer;
 }
 
 .file-icon {
-  /* font-size: 20px;  Для SVG розмір задається атрибутами width/height */
   margin-right: 8px;
-  /* Забезпечення вертикального вирівнювання, якщо display: inline-flex на батьківському .file-link ще не достатньо */
   vertical-align: middle;
 }
 
@@ -715,35 +740,29 @@ const getFileDisplayInfo = (originalFileName, mimeType) => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 180px; /* Обмеження для довгих імен файлів */
+  max-width: 180px;
 }
 
 .file-info {
-  font-size: 0.75em;
-  color: rgba(255, 255, 255, 0.6);
-  margin-top: 4px;
-  text-align: left; /* Вирівнювання інформації про файл */
-}
-
-.input-area { /* Обгортка для інпутів */
+  font-size: 0.8em;
+  color: rgba(255, 255, 255, 0.65);
+  margin-top: 5px;
   display: flex;
-  gap: 8px;
-  margin-top: 15px;
-  align-items: center; /* Вирівнювання по вертикалі */
+  align-items: center;
 }
 
 .attach-file-button {
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.25);
   color: #b0b8c5;
-  padding: 8px; /* Зробити квадратнішим */
-  border-radius: 50%; /* Кругла кнопка */
+  padding: 8px;
+  border-radius: 50%;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: background-color 0.2s, color 0.2s;
-  flex-shrink: 0; /* Щоб кнопка не стискалась */
+  flex-shrink: 0;
 }
 
 .attach-file-button:hover {
@@ -752,11 +771,10 @@ const getFileDisplayInfo = (originalFileName, mimeType) => {
 }
 
 .attach-file-button svg {
-  width: 20px; /* Розмір SVG іконки */
+  width: 20px;
   height: 20px;
 }
 
-/* Стилі для прев'ю вибраного файлу перед відправкою */
 .file-preview-area {
   margin-top: 8px;
   padding: 8px;
@@ -781,33 +799,17 @@ const getFileDisplayInfo = (originalFileName, mimeType) => {
 .clear-file-button:hover {
   color: #ff4757;
 }
-/* ... ваші існуючі стилі ... */
-
-.file-info {
-  font-size: 0.8em; /* Трохи збільшив для кращої читабельності типу файлу */
-  color: rgba(255, 255, 255, 0.65); /* Трохи світліший колір */
-  margin-top: 5px; /* Невеликий відступ зверху */
-  display: flex; /* Для кращого вирівнювання іконки та тексту */
-  align-items: center; /* Вирівнювання по центру вертикалі */
-}
 
 .file-type-icon {
-  margin-right: 6px; /* Відступ праворуч від іконки типу файлу */
-  font-size: 1.2em;  /* Розмір для emoji-іконок, можна налаштувати */
-  line-height: 1; /* Для кращого вертикального вирівнювання emoji */
+  margin-right: 6px;
+  font-size: 1.2em;
+  line-height: 1;
 }
 
 .file-type-description {
-  /* Додаткові стилі, якщо потрібно */
-  white-space: nowrap; /* Щоб опис не переносився, якщо короткий */
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 150px; /* Обмеження ширини, якщо опис може бути довгим */
-}
-
-/* Переконайтесь, що file-icon для SVG завантаження також добре вирівняний */
-.file-icon {
-  margin-right: 8px;
-  vertical-align: middle;
+  max-width: 150px;
 }
 </style>
