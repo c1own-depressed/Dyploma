@@ -30,18 +30,25 @@
             </button>
           </div>
         </div>
-        <div class="input-group">
-          <div class="rating-container">
-            <label for="rating">Оцінка:</label>
-            <select id="rating" v-model="rating">
-              <option value="0" disabled>Оберіть оцінку</option>
-              <option v-for="i in 5" :key="i" :value="i">{{ i }}</option>
-            </select>
+
+        <div v-if="!isAlreadyRated" class="rating-section">
+          <div class="input-group">
+            <div class="rating-container">
+              <label for="rating">Оцінка:</label>
+              <select id="rating" v-model="rating" :disabled="isAlreadyRated">
+                <option value="0" disabled>Оберіть оцінку</option>
+                <option v-for="i in 5" :key="i" :value="i">{{ i }}</option>
+              </select>
+            </div>
           </div>
+          <button class="submit-btn" @click="submitRating" :disabled="rating === 0 || isAlreadyRated">
+            Подати оцінку
+          </button>
         </div>
 
-        <button class="submit-btn" @click="submitRating" :disabled="rating === 0">Подати оцінку</button>
-        <p v-if="ratingMessage" :class="['rating-message', ratingMessage.startsWith('Помилка') ? 'error' : '']">{{ ratingMessage }}</p>
+        <p v-if="ratingMessage" :class="['rating-message', ratingMessage.startsWith('Помилка') ? 'error' : (isAlreadyRated && ratingMessage.includes('вже оцінили') ? 'info' : '')]">
+          {{ ratingMessage }}
+        </p>
       </div>
 
       <div v-else-if="loadingError">
@@ -53,52 +60,61 @@
     </div>
   </main>
 </template>
+
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
 import { ref, onMounted } from 'vue'
 import axios from 'axios'
 
 interface TaskResult {
-  id: number; // Додано id
+  id: number;
   title: string;
   description: string;
   executionResult: string;
-  attachedFileName?: string | null; // Поле для імені файлу
+  attachedFileName?: string | null;
+  isRatedByCustomer?: boolean; // <--- Додано нове поле
 }
 
 const route = useRoute()
 const router = useRouter()
 
-const taskId = route.params.taskId as string; // Явно вказуємо тип
+const taskId = route.params.taskId as string;
 const result = ref<TaskResult | null>(null)
-const rating = ref<number>(0); // Початкове значення 0 для вибору
+const rating = ref<number>(0);
 const loadingError = ref<string | null>(null);
 const ratingMessage = ref<string>('');
+const isAlreadyRated = ref<boolean>(false); // <--- Новий ref для стану "вже оцінено"
 
-
-const token = localStorage.getItem('jwtToken') || localStorage.getItem('jwt_token'); // Перевіряємо обидва варіанти
+const token = localStorage.getItem('jwtToken') || localStorage.getItem('jwt_token');
 
 if (!token) {
   console.error('Токен не знайдено!');
   loadingError.value = 'Помилка автентифікації: токен не знайдено.';
-  // Можна додати перенаправлення на сторінку логіну
-  // router.push('/login');
 }
 
 const fetchTaskResult = async () => {
   loadingError.value = null;
+  ratingMessage.value = ''; // Скидаємо повідомлення про оцінку при завантаженні
+  isAlreadyRated.value = false; // Скидаємо стан "вже оцінено"
+
   if (!token) return;
 
   try {
-    const res = await axios.get<TaskResult>(`http://localhost:8000/user/${taskId}/result`, { // Вказуємо тип відповіді
+    const res = await axios.get<TaskResult>(`http://localhost:8000/user/${taskId}/result`, {
       headers: {
         Authorization: `Bearer ${token}`
       }
     });
     result.value = res.data;
-    if (!res.data.executionResult && !res.data.attachedFileName) {
-      // Якщо немає ані опису, ані файлу, можливо, завдання ще не виконане
-      // або виконане без деталей. Можна уточнити це повідомлення.
+
+    if (res.data.isRatedByCustomer) { // <--- Перевіряємо нове поле
+      isAlreadyRated.value = true;
+      ratingMessage.value = "Ви вже оцінили це завдання."; // Попередньо встановлюємо повідомлення
+      // Можна також завантажити попередню оцінку, якщо бэкенд її повертає
+      // rating.value = res.data.previousRatingValue; (якщо таке поле є)
+    }
+
+    if (!res.data.executionResult && !res.data.attachedFileName && !isAlreadyRated.value) {
       loadingError.value = "Виконавець ще не надав результат для цього завдання або результат порожній.";
     }
   } catch (e: any) {
@@ -120,35 +136,29 @@ const downloadAttachedFile = async (filename: string | undefined | null) => {
   try {
     const response = await axios.get(`http://localhost:8000/user/download_attachment/${filename}`, {
       headers: {
-        Authorization: `Bearer ${token}` // Якщо ендпоінт завантаження захищений
+        Authorization: `Bearer ${token}`
       },
-      responseType: 'blob', // Важливо для завантаження файлів
+      responseType: 'blob',
     });
 
-    // Створення URL для blob та ініціювання завантаження
     const url = window.URL.createObjectURL(new Blob([response.data]));
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', filename); // Встановлюємо ім'я файлу для завантаження
+    link.setAttribute('download', filename);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    window.URL.revokeObjectURL(url); // Очищення
+    window.URL.revokeObjectURL(url);
     ratingMessage.value = `Файл "${filename}" успішно завантажено.`;
 
   } catch (error: any) {
     console.error('Помилка при завантаженні файлу:', error);
-    if (error.response && error.response.data) {
-      // Якщо відповідь - blob, її треба буде розпарсити як JSON, якщо помилка у форматі JSON
-      // Це складніше, бо відповідь вже blob. Зазвичай сервер надсилає помилки як JSON.
-      // Якщо сервер надсилає помилку як JSON, а ми очікуємо blob, це викличе помилку парсингу тут.
-      // Краще обробляти помилки HTTP статусів.
+    if (error.response) {
       if (error.response.status === 404) {
         ratingMessage.value = `Помилка: Файл "${filename}" не знайдено на сервері.`;
       } else if (error.response.status === 400) {
         ratingMessage.value = `Помилка: Некоректний запит на завантаження файлу.`;
-      }
-      else {
+      } else {
         ratingMessage.value = 'Не вдалося завантажити файл.';
       }
     } else {
@@ -159,6 +169,10 @@ const downloadAttachedFile = async (filename: string | undefined | null) => {
 
 const submitRating = async () => {
   ratingMessage.value = '';
+  if (isAlreadyRated.value) { // <--- Додаткова перевірка
+    ratingMessage.value = "Ви вже оцінили це завдання.";
+    return;
+  }
   if (rating.value === 0) {
     ratingMessage.value = 'Будь ласка, оберіть оцінку перед подачею.';
     return;
@@ -175,7 +189,8 @@ const submitRating = async () => {
         });
     console.log('Оцінка подана успішно:', response.data);
     ratingMessage.value = response.data.message || 'Оцінка успішно подана!';
-    // Перекидаємо на сторінку профілю через деякий час, щоб користувач побачив повідомлення
+    isAlreadyRated.value = true; // <--- Встановлюємо, що оцінка подана
+
     setTimeout(() => {
       router.push('/profile');
     }, 2000);
@@ -183,17 +198,24 @@ const submitRating = async () => {
   } catch (e: any) {
     console.error('Не вдалося подати оцінку', e);
     if (e.response && e.response.data && e.response.data.detail) {
-      ratingMessage.value = `Помилка: ${e.response.data.detail}`;
+      const errorMessage = e.response.data.detail;
+      ratingMessage.value = `Помилка: ${errorMessage}`;
+      // Якщо бэкенд повертає помилку "Ви вже оцінили це завдання."
+      // (хоча ми вже маємо isRatedByCustomer з GET запиту, це для узгодженості)
+      if (errorMessage.includes("вже оцінили це завдання")) {
+        isAlreadyRated.value = true;
+      }
     } else {
       ratingMessage.value = 'Не вдалося подати оцінку.';
     }
   }
 };
 
+// ... (решта ваших функцій getFileExtension, getFileDisplayInfo, goToProfile) ...
 interface FileDisplayInfo {
   icon: string;
   description: string;
-  defaultPreview?: boolean; // Чи можна спробувати показати прев'ю (для зображень)
+  defaultPreview?: boolean;
 }
 
 const getFileExtension = (filename: string | undefined | null): string => {
@@ -203,76 +225,32 @@ const getFileExtension = (filename: string | undefined | null): string => {
 
 const getFileDisplayInfo = (filename: string | undefined | null): FileDisplayInfo => {
   const extension = getFileExtension(filename);
-  let icon = '📎'; // Іконка за замовчуванням (скріпка)
+  let icon = '📎';
   let description = 'Файл';
   let defaultPreview = false;
 
   if (extension) {
     switch (extension) {
-      case 'pdf':
-        icon = '📜'; // Сувій
-        description = 'PDF Документ';
-        break;
-      case 'doc':
-      case 'docx':
-        icon = '📄'; // Сторінка документу
-        description = 'Документ Word';
-        break;
-      case 'xls':
-      case 'xlsx':
-        icon = '📊'; // Графік
-        description = 'Документ Excel';
-        break;
-      case 'ppt':
-      case 'pptx':
-        icon = '🖥️'; // Монітор
-        description = 'Презентація';
-        break;
-      case 'zip':
-      case 'rar':
-      case '7z':
-        icon = '🗜️'; // Лещата (архів)
-        description = 'Архів';
-        break;
-      case 'txt':
-        icon = '📝'; // Нотатки
-        description = 'Текстовий файл';
-        break;
-      case 'mp3':
-      case 'wav':
-      case 'ogg':
-        icon = '🎵'; // Нота
-        description = 'Аудіофайл';
-        break;
-      case 'mp4':
-      case 'avi':
-      case 'mov':
-      case 'mkv':
-        icon = '🎞️'; // Кіноплівка
-        description = 'Відеофайл';
-        break;
-      case 'jpg':
-      case 'jpeg':
-      case 'png':
-      case 'gif':
-      case 'bmp':
-      case 'webp':
-      case 'svg':
-        icon = '🖼️'; // Картина в рамці
-        description = 'Зображення';
-        defaultPreview = true; // Позначаємо, що це зображення
-        break;
-      default:
-        description = `Файл ${extension.toUpperCase()}`;
+      case 'pdf': icon = '📜'; description = 'PDF Документ'; break;
+      case 'doc': case 'docx': icon = '📄'; description = 'Документ Word'; break;
+      case 'xls': case 'xlsx': icon = '📊'; description = 'Документ Excel'; break;
+      case 'ppt': case 'pptx': icon = '🖥️'; description = 'Презентація'; break;
+      case 'zip': case 'rar': case '7z': icon = '🗜️'; description = 'Архів'; break;
+      case 'txt': icon = '📝'; description = 'Текстовий файл'; break;
+      case 'mp3': case 'wav': case 'ogg': icon = '🎵'; description = 'Аудіофайл'; break;
+      case 'mp4': case 'avi': case 'mov': case 'mkv': icon = '🎞️'; description = 'Відеофайл'; break;
+      case 'jpg': case 'jpeg': case 'png': case 'gif': case 'bmp': case 'webp': case 'svg':
+        icon = '🖼️'; description = 'Зображення'; defaultPreview = true; break;
+      default: description = `Файл ${extension.toUpperCase()}`;
     }
   }
   return { icon, description, defaultPreview };
 };
 
-
 const goToProfile = () => {
   router.push('/profile');
 };
+
 
 onMounted(() => {
   fetchTaskResult();
@@ -280,6 +258,8 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* ... (Ваші існуючі стилі залишаються тут) ... */
+/* Додайте або модифікуйте, якщо потрібно, стиль для .rating-section */
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap');
 
 .task-result-page {
@@ -302,18 +282,18 @@ onMounted(() => {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-radius: 20px;
-  padding: 2.2rem; /* Трохи зменшено падінг для компактності */
+  padding: 2.2rem;
   box-shadow: 0 8px 35px rgba(0, 0, 0, 0.45);
   border: 1px solid rgba(255, 255, 255, 0.12);
   width: 100%;
-  max-width: 580px; /* Трохи скориговано */
+  max-width: 580px;
   color: #f0f0f0;
   text-align: center;
 }
 
 .back-link {
   display: block;
-  margin-bottom: 1.5rem; /* Відступ перед головним заголовком */
+  margin-bottom: 1.5rem;
   color: #b0b8c5;
   cursor: pointer;
   font-weight: 500;
@@ -328,8 +308,8 @@ onMounted(() => {
   text-decoration: underline;
 }
 
-.task-result-card h2 { /* "Результат завдання" */
-  font-size: 1.8rem; /* Трохи менший головний заголовок */
+.task-result-card h2 {
+  font-size: 1.8rem;
   margin-bottom: 1.8rem;
   font-weight: 600;
   color: #ffffff;
@@ -338,36 +318,42 @@ onMounted(() => {
 }
 
 .result-block {
-  margin-bottom: 1.8rem; /* Відступ після блоку результатів */
-  /* border-bottom: 1px solid rgba(255, 255, 255, 0.08); */ /* Прибрано межу, використовуємо відступи */
-  /* padding-bottom: 1.2rem; */
+  margin-bottom: 1.8rem;
 }
 
-.result-block h3 { /* Назва завдання */
-  font-size: 1.3rem; /* Менший, ніж h2 */
+.result-block h3 {
+  font-size: 1.3rem;
   margin-bottom: 0.8rem;
-  font-weight: 600; /* Можна 500 для меншого акценту */
+  font-weight: 600;
   color: #e8e9ed;
-  text-align: center; /* Назва завдання зліва */
+  text-align: center;
   line-height: 1.4;
 }
 
 .result-block p {
-  font-size: 0.95rem; /* Трохи менший текст опису */
+  font-size: 0.95rem;
   color: #d5d8de;
-  margin-bottom: 0.6rem;
+  margin-bottom: 0.8rem;
   line-height: 1.6;
+  text-align: left;
+  word-break: break-word;
 }
 .result-block p strong {
   color: #f0f0f0;
   font-weight: 600;
+  display: block;
+  margin-bottom: 0.3rem;
 }
 
-/* Секція оцінки - робимо її більш інтегрованою */
-.input-group { /* Цей div вже центрує вміст через flex у вашому HTML/CSS */
+
+.rating-section { /* Новий клас для обгортки блоку оцінки */
+  margin-top: 1.5rem; /* Або інший потрібний відступ */
+}
+
+.input-group {
   margin-top: 1rem;
   margin-bottom: 1.8rem;
-  display: flex; /* Залишаємо для центрування .rating-container */
+  display: flex;
   justify-content: center;
   align-items: center;
 }
@@ -375,8 +361,7 @@ onMounted(() => {
 .rating-container {
   display: flex;
   align-items: center;
-  gap: 0.8rem; /* Проміжок між "Оцінка:" та select */
-  /* Забираємо фон та межу з .rating-container, стилізуємо label та select окремо */
+  gap: 0.8rem;
 }
 
 .rating-container label {
@@ -387,12 +372,12 @@ onMounted(() => {
 
 .rating-container select {
   width: auto;
-  min-width: 60px; /* Мінімальна ширина */
+  min-width: 60px;
   padding: 0.6rem 0.8rem;
-  border-radius: 8px; /* Менший радіус для select */
-  background: rgba(255, 255, 255, 0.1); /* Схоже на інші поля вводу */
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.2);
-  color: #2c63a6;
+  color: #f0f0f0; /* Змінено колір тексту на світлий для кращої видимості */
   font-size: 1rem;
   font-family: 'Poppins', sans-serif;
   outline: none;
@@ -403,17 +388,24 @@ onMounted(() => {
   border-color: rgba(255,255,255,0.4);
   background-color: rgba(255,255,255,0.15);
 }
+/* Стиль для заблокованого select */
+.rating-container select:disabled {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: #888;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
 
-.submit-btn { /* Кнопка "Подати оцінку" */
+
+.submit-btn {
   background-color: #007AFF;
   color: white;
   border: none;
   padding: 0.9rem 1.5rem;
-  /* width: 100%; -- Забираємо, щоб кнопка не була на всю ширину */
-  display: block; /* Для центрування через margin:auto */
-  margin: 1.5rem auto 0; /* Відступ зверху, центрування */
-  min-width: 200px; /* Мінімальна ширина */
-  width: auto; /* Ширина по контенту + падінги */
+  display: block;
+  margin: 1.5rem auto 0;
+  min-width: 200px;
+  width: auto;
   max-width: 100%;
   border-radius: 10px;
   font-weight: 600;
@@ -424,22 +416,22 @@ onMounted(() => {
   box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
 }
 
-.submit-btn:hover {
+.submit-btn:hover:not(:disabled) { /* :not(:disabled) щоб ховер не спрацьовував на заблокованій кнопці */
   background-color: #005bb5;
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 123, 255, 0.4);
 }
 
-/* Стиль для тексту завантаження */
-div > p[data-loading-text="true"] { /* Якщо ви додасте data- атрибут до <p>Завантаження...</p> */
+
+div > p[data-loading-text="true"] {
   color: #b0b8c5 !important;
   font-size: 1.1rem;
   text-align: center;
   font-weight: 500;
   margin-top: 2rem;
 }
-/* Або якщо текст завжди однаковий: */
-.task-result-card div > p:first-child:last-child { /* Спроба вибрати <p>Завантаження...</p> якщо він єдиний дочірній */
+
+.task-result-card div > p:first-child:last-child {
   color: #b0b8c5;
   font-size: 1.1rem;
   text-align: center;
@@ -467,32 +459,32 @@ div > p[data-loading-text="true"] { /* Якщо ви додасте data- атр
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 1rem; /* Проміжок між назвою файлу та кнопкою */
+  gap: 1rem;
 }
 
 .file-name {
   font-size: 0.95rem;
   color: #c0c8d5;
-  word-break: break-all; /* Для довгих імен файлів */
+  word-break: break-all;
   flex-grow: 1;
 }
 
 .download-btn {
-  background-color: #007AFF; /* Такий же, як submit-btn */
+  background-color: #007AFF;
   color: white;
   border: none;
-  padding: 0.6rem 1.2rem; /* Трохи менші падінги */
-  border-radius: 8px; /* Трохи менший радіус */
-  font-weight: 500; /* Можна 500 */
-  font-size: 0.9rem; /* Трохи менший шрифт */
+  padding: 0.6rem 1.2rem;
+  border-radius: 8px;
+  font-weight: 500;
+  font-size: 0.9rem;
   cursor: pointer;
   transition: background-color 0.2s ease, transform 0.1s ease;
-  text-transform: none; /* Зазвичай кнопки завантаження не мають uppercase */
+  text-transform: none;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
 }
 
 .download-btn:hover {
-  background-color: #005bb5; /* Темніший при наведенні */
+  background-color: #005bb5;
   transform: translateY(-1px);
 }
 
@@ -500,7 +492,7 @@ div > p[data-loading-text="true"] { /* Якщо ви додасте data- атр
   transform: translateY(0);
 }
 
-.error-message { /* Стиль для помилки завантаження даних */
+.error-message {
   color: #ff9a9a;
   background-color: rgba(255, 82, 82, 0.15);
   border: 1px solid rgba(255, 82, 82, 0.35);
@@ -514,42 +506,38 @@ div > p[data-loading-text="true"] { /* Якщо ви додасте data- атр
 
 .rating-message {
   margin-top: 1rem;
+  padding: 0.5rem 0.8rem; /* Додано падінг для всіх повідомлень */
+  border-radius: 6px;     /* Додано радіус для всіх повідомлень */
   font-size: 0.9rem;
-  color: #b0b8c5; /* Нейтральний колір для повідомлень */
+  color: #b0b8c5;
   text-align: center;
+  font-weight: 500; /* Зроблено жирнішим для кращої видимості */
 }
-.rating-message.error { /* Якщо хочете окремий стиль для помилок оцінки */
+.rating-message.error {
   color: #ff9a9a;
+  background-color: rgba(255, 82, 82, 0.1);
+  border: 1px solid rgba(255, 82, 82, 0.2);
+}
+.rating-message.info { /* Додатковий стиль для інформаційних повідомлень, наприклад "вже оцінено" */
+  color: #90cdf4; /* Світло-блакитний */
+  background-color: rgba(144, 205, 244, 0.1);
+  border: 1px solid rgba(144, 205, 244, 0.2);
 }
 
-/* Забезпечимо, що кнопка "Подати оцінку" деактивована, коли rating === 0 */
+
 .submit-btn:disabled {
-  background-color: #555;
-  cursor: not-allowed;
-  opacity: 0.7;
+  background-color: #555 !important; /* Важливо для перевизначення */
+  cursor: not-allowed !important;
+  opacity: 0.6 !important;
+  transform: none !important;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2) !important;
 }
-.submit-btn:disabled:hover {
-  background-color: #555;
-  transform: none;
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
-}
-.result-block p {
-  font-size: 0.95rem;
-  color: #d5d8de;
-  margin-bottom: 0.8rem; /* Зменшено відступ */
-  line-height: 1.6;
-  text-align: left; /* Вирівнювання тексту вліво */
-  word-break: break-word;
-}
-.result-block p strong {
-  color: #f0f0f0;
-  font-weight: 600;
-  display: block; /* Щоб "Опис завдання:" було на окремому рядку */
-  margin-bottom: 0.3rem;
+.submit-btn:disabled:hover { /* Перевизначаємо ховер для заблокованої кнопки */
+  background-color: #555 !important;
+  transform: none !important;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2) !important;
 }
 
-
-/* СТИЛІ ДЛЯ ОНОВЛЕНОГО БЛОКУ ФАЙЛУ */
 .submitted-item-container {
   margin-top: 1.8rem;
   margin-bottom: 2rem;
@@ -566,8 +554,8 @@ div > p[data-loading-text="true"] { /* Якщо ви додасте data- атр
 .file-bubble {
   display: flex;
   align-items: center;
-  background-color: rgba(60, 55, 80, 0.7); /* Трохи інший фон, як булька */
-  border-radius: 12px; /* Більш заокруглені кути */
+  background-color: rgba(60, 55, 80, 0.7);
+  border-radius: 12px;
   padding: 12px 15px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: 0 2px 4px rgba(0,0,0,0.2);
@@ -582,7 +570,7 @@ div > p[data-loading-text="true"] { /* Якщо ви додасте data- атр
   flex-shrink: 0;
   margin-right: 12px;
   background-color: rgba(255, 255, 255, 0.1);
-  width: 48px; /* Фіксований розмір контейнера іконки */
+  width: 48px;
   height: 48px;
   border-radius: 8px;
   display: flex;
@@ -591,7 +579,7 @@ div > p[data-loading-text="true"] { /* Якщо ви додасте data- атр
 }
 
 .file-bubble-icon {
-  font-size: 24px; /* Розмір emoji-іконки */
+  font-size: 24px;
   color: #e0e1e6;
 }
 
@@ -599,8 +587,8 @@ div > p[data-loading-text="true"] { /* Якщо ви додасте data- атр
   flex-grow: 1;
   display: flex;
   flex-direction: column;
-  overflow: hidden; /* Для обрізання тексту, якщо потрібно */
-  margin-right: 10px; /* Відступ від кнопки завантаження */
+  overflow: hidden;
+  margin-right: 10px;
 }
 
 .file-bubble-name {
@@ -609,7 +597,7 @@ div > p[data-loading-text="true"] { /* Якщо ви додасте data- атр
   color: #ffffff;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis; /* Додає "..." якщо ім'я задовге */
+  text-overflow: ellipsis;
 }
 
 .file-bubble-description {
@@ -621,9 +609,9 @@ div > p[data-loading-text="true"] { /* Якщо ви додасте data- атр
   flex-shrink: 0;
   background: none;
   border: none;
-  color: #00aaff; /* Яскравий синій для іконки завантаження */
+  color: #00aaff;
   padding: 8px;
-  border-radius: 50%; /* Кругла кнопка */
+  border-radius: 50%;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -641,34 +629,4 @@ div > p[data-loading-text="true"] { /* Якщо ви додасте data- атр
   height: 22px;
 }
 
-/* Стилі для оцінки і кнопки відправки - залишаються як є, або можна підправити за потреби */
-.input-group {
-  margin-top: 2rem; /* Збільшено відступ, якщо є файл */
-  margin-bottom: 1.8rem;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-/* ... (решта ваших стилів для rating-container, select, submit-btn, error-message, rating-message) ... */
-
-.rating-message {
-  margin-top: 1rem;
-  font-size: 0.9rem;
-  color: #b0b8c5;
-  text-align: center;
-  font-weight: 500;
-}
-.rating-message.error {
-  color: #ff9a9a; /* Червоний для помилок */
-  background-color: rgba(255, 82, 82, 0.1);
-  padding: 0.5rem 0.8rem;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 82, 82, 0.2);
-}
-
-/* Невелике виправлення для розташування "Опис завдання:" та "Результат виконання:" */
-.result-block p strong {
-  /* ... існуючі стилі ... */
-  text-align: left; /* Якщо потрібно, хоча p вже має text-align: left */
-}
 </style>

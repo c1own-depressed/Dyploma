@@ -29,16 +29,17 @@ fastapi_users = FastAPIUsers[User, int](
 UPLOAD_DIR = "static/task_files"
 
 
-# Оновлена схема для результату завдання
+# Pydantic модель TaskResultResponse
 class TaskResultResponse(BaseModel):
     id: int
     title: str
     description: str
-    executionResult: str  # Це task.c.execution_description
-    attachedFileName: Optional[str] = None  # Ім'я прикріпленого файлу, наприклад, "report.pdf"
+    executionResult: str
+    attachedFileName: Optional[str] = None
+    isRatedByCustomer: bool = False # Нове поле, за замовчуванням false
 
     class Config:
-        from_attributes = True  # Для Pydantic v2 (замініть orm_mode = True, якщо у вас Pydantic v1)
+        from_attributes = True
 
 
 # Схема для оцінки (залишається без змін)
@@ -50,27 +51,36 @@ class RatingRequest(BaseModel):
 async def get_task_result(
         task_id: int,
         session: AsyncSession = Depends(get_async_session),
-        # user: User = Depends(fastapi_users.current_user()) # Розкоментуйте, якщо потрібна автентифікація для цього ендпоінту
+        # Якщо для визначення isRatedByCustomer потрібен поточний користувач,
+        # його потрібно тут отримати.
+        # Припустимо, логіка така: якщо завдання існує і для нього є оцінка,
+        # то це оцінка від замовника.
+        # user: User = Depends(fastapi_users.current_user(optional=True)) # Можливо, потрібен для перевірки, чи поточний юзер = customer
 ):
-    # Перевірка чи існує завдання
     result_db = await session.execute(
         select(task).where(task.c.id == task_id)
     )
-    task_row = result_db.fetchone()  # Використовуємо fetchone, оскільки очікуємо один запис або жодного
+    task_row = result_db.fetchone()
 
     if not task_row:
         raise HTTPException(status_code=404, detail="Завдання не знайдено")
 
-    task_data = task_row._mapping  # Доступ до даних як до словника
+    task_data = task_row._mapping
+
+    is_rated = False
+    # Перевіряємо, чи є оцінка для цього завдання
+    # Ця логіка спрацює коректно, якщо тільки замовник може оцінювати своє завдання,
+    # і він може це зробити лише один раз.
+    existing_rating_query = select(rating.c.id).where(rating.c.task_id == task_id) # Просто перевіряємо наявність
+    existing_rating_result = await session.execute(existing_rating_query)
+    if existing_rating_result.fetchone():
+        is_rated = True
 
     file_name = None
-    # task.c.execution_image зберігає відносний шлях до файлу, наприклад 'static/task_files/filename.ext'
     if task_data.get("execution_image"):
         try:
-            # Витягуємо тільки ім'я файлу зі шляху
             file_name = os.path.basename(task_data["execution_image"])
         except Exception:
-            # Можна додати логування помилки, якщо шлях некоректний
             file_name = None
 
     return TaskResultResponse(
@@ -78,7 +88,8 @@ async def get_task_result(
         title=task_data["title"],
         description=task_data["description"],
         executionResult=task_data["execution_description"] or "Опис виконання відсутній.",
-        attachedFileName=file_name
+        attachedFileName=file_name,
+        isRatedByCustomer=is_rated # Додаємо нове поле у відповідь
     )
 
 
@@ -103,7 +114,7 @@ async def download_task_attachment(filename: str):
 async def submit_rating(
         task_id: int,
         rating_request: RatingRequest,
-        user: User = Depends(fastapi_users.current_user()),  # Додано користувача для отримання customer_id
+        user: User = Depends(fastapi_users.current_user()),
         session: AsyncSession = Depends(get_async_session)
 ):
     result = await session.execute(select(task).where(task.c.id == task_id))
@@ -113,30 +124,31 @@ async def submit_rating(
 
     task_data = task_row._mapping
     executor_id = task_data.get("executor_id")
-    customer_id = task_data.get("customer_id")  # Отримуємо customer_id з завдання
+    customer_id_from_task = task_data.get("customer_id") # Отримуємо customer_id з завдання
 
     if executor_id is None:
         raise HTTPException(status_code=400, detail="Завдання не має виконавця, щоб його оцінити.")
 
-    # Перевірка, чи поточний користувач є замовником цього завдання
-    if customer_id != user.id:
+    # Перевірка, чи поточний користувач є замовником цього завдання (ця перевірка залишається важливою!)
+    if customer_id_from_task != user.id:
         raise HTTPException(status_code=403, detail="Ви не можете оцінити це завдання, оскільки не є його замовником.")
 
-    # Перевірка, чи завдання вже було оцінене
-    existing_rating_result = await session.execute(
-        select(rating).where(rating.c.task_id == task_id).where(rating.c.customer_id == user.id)
-    )
+    # ЗМІНЕНА Перевірка, чи завдання вже було оцінене (замовником)
+    # Оскільки тільки замовник може оцінити, перевіряємо, чи існує хоча б одна оцінка для цього task_id
+    existing_rating_query = select(rating).where(rating.c.task_id == task_id)
+    existing_rating_result = await session.execute(existing_rating_query)
     if existing_rating_result.fetchone():
-        raise HTTPException(status_code=400, detail="Ви вже оцінили це завдання.")
+        raise HTTPException(status_code=400, detail="Ви вже оцінили це завдання.") # Або "Це завдання вже було оцінене."
 
     if not (1 <= rating_request.rating <= 5):
         raise HTTPException(status_code=400, detail="Оцінка повинна бути від 1 до 5.")
 
+    # ЗМІНЕНЕ Збереження оцінки без customer_id
     new_rating_stmt = rating.insert().values(
         rating=rating_request.rating,
         task_id=task_id,
-        executor_id=executor_id,
-        customer_id=user.id  # Зберігаємо ID користувача, який поставив оцінку (замовника)
+        executor_id=executor_id
+        # comment=rating_request.comment, # Якщо у вас є поле comment у RatingRequest та в таблиці rating
     )
     await session.execute(new_rating_stmt)
     await session.commit()
