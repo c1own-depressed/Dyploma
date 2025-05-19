@@ -9,12 +9,13 @@ import TaskResult from '../views/TaskResult.vue';
 
 import ChatsLayout from '../views/ChatsLayout.vue';
 import ChatWindow from '../views/ChatWindow.vue';
+import AboutUs from '../views/AboutUs.vue'; // <--- ІМПОРТ ДОДАНО
 
 // Динамічні імпорти
 const CreateStartup = () => import('@/views/CreateStartup.vue');
 const EditStartup = () => import('@/views/EditStartup.vue');
 const CreateTask = () => import('@/views/CreateTask.vue');
-const CreateTaskPage = () => import('@/views/CreateTask.vue');
+const CreateTaskPage = () => import('@/views/CreateTask.vue'); // Зверніть увагу, ви двічі імпортуєте CreateTask.vue
 const EditTask = () => import('@/views/EditTask.vue');
 const CompleteTask = () => import('@/views/CompleteTask.vue');
 
@@ -75,7 +76,7 @@ const routes = [
     {
         path: '/create-task/:id',
         name: 'CreateTaskWithId',
-        component: CreateTaskPage,
+        component: CreateTaskPage, // Перевірте, чи це правильний компонент, бо ім'я змінної CreateTaskPage
         meta: { requiresAuth: true }
     },
     {
@@ -108,19 +109,26 @@ const routes = [
                 component: ChatWindow
             },
             {
-                path: ':id',
+                path: ':id', // Шлях для конкретного чату
+                name: 'ChatWithUser', // Додайте ім'я, якщо потрібно посилатися на нього
                 component: ChatWindow,
                 props: true
             }
         ]
     },
-    {
-        path: '/',
-        redirect: '/login'
+    { // <--- НОВИЙ МАРШРУТ ДОДАНО ТУТ
+        path: '/about-us',
+        name: 'AboutUs',
+        component: AboutUs
     },
     {
-        path: '/:pathMatch(.*)*',
-        redirect: '/login'
+        path: '/',
+        redirect: '/login' // Зазвичай, '/' перенаправляє на головну сторінку після логіну, або на /login, якщо не авторизований
+    },
+    {
+        path: '/:pathMatch(.*)*', // "Catch all" для неіснуючих шляхів
+        name: 'NotFound',
+        redirect: '/login' // Або на спеціальну сторінку 404
     }
 ];
 
@@ -131,7 +139,10 @@ const router = createRouter({
 
 router.beforeEach((to, from, next) => {
     const token = localStorage.getItem('jwtToken');
-    if (to.matched.some(record => record.meta.requiresAuth) && !token) {
+    // Якщо користувач авторизований і намагається перейти на /login або /register, перенаправити на /main-page
+    if (token && (to.name === 'Login' || to.name === 'Register')) {
+        next({ name: 'MainPage' });
+    } else if (to.matched.some(record => record.meta.requiresAuth) && !token) {
         next('/login');
     } else {
         next();

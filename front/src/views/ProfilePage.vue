@@ -32,14 +32,14 @@
     </div>
 
     <div class="tabs">
-      <button :class="{ active: activeTab === 'startups' }" @click="activeTab = 'startups'">Мої стартапи</button>
+      <button :class="{ active: activeTab === 'startups' }" @click="activeTab = 'startups'">Мої ідеї</button>
       <button :class="{ active: activeTab === 'tasks' }" @click="activeTab = 'tasks'">Активні завдання</button>
     </div>
 
     <div class="tab-content">
       <div v-if="activeTab === 'startups'">
-        <h2>Мої стартапи</h2>
-        <button class="create-startup-btn" @click="createStartup">+ Створити стартап</button>
+        <h2>Мої ідеї</h2>
+        <button class="create-startup-btn" @click="createStartup">+ Створити ідею</button>
         <ul v-if="startups.length">
           <li v-for="startupItem in startups" :key="startupItem.id" class="task-item">
             <div class="task-header" @click="toggleExpand('startup', startupItem.id)">
@@ -70,11 +70,11 @@
                 <p v-else>Немає завдань</p>
 
                 <div class="startup-actions">
-                  <button class="complete-btn" @click.stop="editStartup(startupItem.id)">Редагувати стартап</button>
+                  <button class="complete-btn" @click.stop="editStartup(startupItem.id)">Редагувати ідею</button>
                   <button class="edit-btn" @click.stop="createTask(startupItem.id)">+ Додати завдання</button>
                 </div>
 
-                <h4 class="comments-heading">Коментарі до стартапу:</h4>
+                <h4 class="comments-heading">Коментарі до ідеї:</h4>
                 <ul v-if="startupItem.comments && startupItem.comments.length" class="startup-comments-list">
                   <li v-for="commentEntry in startupItem.comments" :key="commentEntry.id" class="comment-entry">
                     <div class="comment-entry-header">
@@ -88,12 +88,12 @@
                     <p class="comment-text-small">{{ commentEntry.text }}</p>
                   </li>
                 </ul>
-                <p v-else class="no-comments-text">До цього стартапу ще немає коментарів.</p>
+                <p v-else class="no-comments-text">До цієї ідеї ще немає коментарів.</p>
               </div>
             </transition>
           </li>
         </ul>
-        <p v-else>Немає стартапів.</p>
+        <p v-else>Немає ідей.</p>
       </div>
 
       <div v-if="activeTab === 'tasks'">
@@ -228,7 +228,7 @@ const fetchStartups = async () => {
       });
     });
   } catch (e) {
-    console.error('Помилка при завантаженні стартапів', e)
+    console.error('Помилка при завантаженні ідей', e)
   }
 }
 
@@ -352,7 +352,7 @@ const actualDeleteStartupComment = async (startupId, commentId) => {
     await fetchStartups();
     showNotification('Успіх!', 'Коментар успішно видалено.');
   } catch (e) {
-    console.error('Помилка при видаленні коментаря стартапу', e);
+    console.error('Помилка при видаленні коментаря ідеї', e);
     let errorMessageText = `Помилка: ${e.message}`;
     if (e.response) {
       errorMessageText = `Помилка видалення: ${e.response.status} - ${e.response.data.detail || e.message}`;

@@ -4,14 +4,14 @@
       <span class="back-link" @click="goBack">← Повернутися в профіль</span>
 
       <form class="startup-form" @submit.prevent="updateStartup" v-if="!loading && startupSuccessfullyLoaded">
-        <h2>Редагувати стартап</h2>
+        <h2>Редагувати ідею</h2>
 
         <div v-if="formError" class="error-message">{{ formError }}</div>
 
         <div class="input-group">
           <input
               type="text"
-              placeholder="Назва стартапу"
+              placeholder="Назва ідеї"
               v-model="form.name"
               required
           />
@@ -29,12 +29,12 @@
         <input type="submit" value="Зберегти зміни" :disabled="isSubmitting" />
       </form>
 
-      <div v-if="loading" class="loading-placeholder">Завантаження даних стартапу...</div>
+      <div v-if="loading" class="loading-placeholder">Завантаження даних ідеї...</div>
       <div v-if="!loading && !startupSuccessfullyLoaded && initialLoadError" class="error-message">{{ initialLoadError }}</div>
 
 
       <button class="delete-button" @click="confirmDeleteStartupAction" v-if="!loading && startupSuccessfullyLoaded" :disabled="isDeleting">
-        {{ isDeleting ? 'Видалення...' : 'Видалити стартап' }}
+        {{ isDeleting ? 'Видалення...' : 'Видалити ідею' }}
       </button>
     </div>
 
@@ -169,9 +169,9 @@ const fetchStartup = async () => {
     form.value.description = res.data.description ?? '';
     startupSuccessfullyLoaded.value = true;
   } catch (e) {
-    console.error('Помилка при завантаженні стартапу', e);
+    console.error('Помилка при завантаженні ідеї', e);
     if (e.response && e.response.status === 404) {
-      initialLoadError.value = 'Стартап не знайдено.';
+      initialLoadError.value = 'Ідею не знайдено.';
     } else if (e.response && e.response.status === 401 ) {
       initialLoadError.value = 'Помилка авторизації.';
       localStorage.removeItem('jwtToken');
@@ -179,7 +179,7 @@ const fetchStartup = async () => {
       showNotificationModal('Помилка авторизації', 'Ваша сесія закінчилася. Будь ласка, увійдіть знову.', 'error', () => router.push('/login'));
 
     } else {
-      initialLoadError.value = 'Не вдалося завантажити дані стартапу. Спробуйте оновити сторінку.';
+      initialLoadError.value = 'Не вдалося завантажити дані ідеї. Спробуйте оновити сторінку.';
     }
   } finally {
     loading.value = false;
@@ -199,7 +199,7 @@ const updateStartup = async () => {
       router.push('/profile');
     });
   } catch (e) {
-    console.error('Помилка при оновленні стартапу', e);
+    console.error('Помилка при оновленні ідеї', e);
     let errorMessageText = 'Не вдалося зберегти зміни. Спробуйте ще раз.';
     if (e.response && e.response.data) {
       if (e.response.data.detail) {
@@ -219,8 +219,8 @@ const updateStartup = async () => {
 
 const confirmDeleteStartupAction = () => { // Перейменовано з confirmDeleteStartup
   openModal({
-    title: 'Видалити стартап?',
-    message: 'Ви впевнені, що хочете видалити цей стартап? <br/> Усі пов\'язані з ним завдання, коментарі та інші дані також будуть видалені назавжди.',
+    title: 'Видалити ідею?',
+    message: 'Ви впевнені, що хочете видалити цей ідею? <br/> Усі пов\'язані з ним завдання, коментарі та інші дані також будуть видалені назавжди.',
     confirmButtonText: 'Видалити',
     cancelButtonText: 'Скасувати',
     type: 'confirm', // Явно вказуємо тип
@@ -236,12 +236,12 @@ const actualDeleteStartup = async () => { // Нова функція для фа
     await axios.delete(`http://localhost:8000/user/startup/${route.params.id}`, {
       headers: { Authorization: `Bearer ${jwt}` }
     });
-    showNotificationModal('Стартап видалено', 'Стартап та всі пов\'язані з ним дані було успішно видалено.', 'success', () => {
+    showNotificationModal('Ідею видалено', 'Ідею та всі пов\'язані з нею дані було успішно видалено.', 'success', () => {
       router.push('/profile');
     });
   } catch (e) {
-    console.error('Помилка при видаленні стартапу', e);
-    showNotificationModal('Помилка видалення', e.response?.data?.detail || 'Не вдалося видалити стартап.', 'error');
+    console.error('Помилка при видаленні ідеї', e);
+    showNotificationModal('Помилка видалення', e.response?.data?.detail || 'Не вдалося видалити ідею.', 'error');
   } finally {
     isDeleting.value = false;
   }

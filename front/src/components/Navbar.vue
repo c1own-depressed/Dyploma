@@ -4,7 +4,7 @@
       <router-link to="/main-page" class="nav-link">Головна сторінка</router-link>
       <router-link to="/profile" class="nav-link">Профіль</router-link>
       <router-link to="/chats" class="nav-link">Чати</router-link>
-    </div>
+      <router-link to="/about-us" class="nav-link">Про нас</router-link> </div>
     <button @click="logout" class="logout-button">
       Вийти
     </button>
@@ -13,35 +13,25 @@
 
 <script setup>
 import {useRouter} from 'vue-router';
-import axios from 'axios'; // Імпортуйте axios
+import axios from 'axios';
 
 const router = useRouter();
 
-const logout = async () => { // Робимо функцію асинхронною
+const logout = async () => {
   const jwt = localStorage.getItem('jwtToken');
 
   if (jwt) {
     try {
-      // Викликаємо ендпоінт на бекенді для явного логауту
-      await axios.post('http://localhost:8000/auth-actions/logout_explicit', {}, { // Пусте тіло запиту, якщо не потрібно
+      await axios.post('http://localhost:8000/auth-actions/logout_explicit', {}, {
         headers: {
           Authorization: `Bearer ${jwt}`
         }
       });
-      // console.log('Successfully marked as offline on backend');
     } catch (error) {
       console.error('Error marking user as offline on backend:', error);
-      // Продовжуємо логаут на фронтенді, навіть якщо запит до бекенду не вдався,
-      // щоб не блокувати користувача.
     }
   }
-
-  // Видаляємо токен з localStorage
   localStorage.removeItem('jwtToken');
-
-  // Опціонально: очистити інші дані, пов'язані з користувачем (наприклад, з Vuex store)
-
-  // Перенаправляємо на сторінку логіну
   router.push('/login');
 };
 </script>
@@ -73,7 +63,7 @@ const logout = async () => { // Робимо функцію асинхронно
 .nav-links {
   display: flex;
   align-items: center;
-  gap: 0.8rem;
+  gap: 0.8rem; /* Відстань між посиланнями */
 }
 
 .nav-link {
@@ -91,11 +81,12 @@ const logout = async () => { // Робимо функцію асинхронно
   color: #ffffff;
 }
 
+/* Стиль для активного посилання */
 .nav-link.router-link-exact-active {
   background-color: rgba(255, 255, 255, 0.12);
   color: #ffffff;
   font-weight: 600;
-  box-shadow: 0 1px 0px rgba(0, 123, 255, 0.7);
+  box-shadow: 0 1px 0px rgba(0, 123, 255, 0.7); /* Можете налаштувати або прибрати тінь, якщо вона не потрібна для всіх активних посилань */
 }
 
 .logout-button {

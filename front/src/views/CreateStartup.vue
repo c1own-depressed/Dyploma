@@ -4,14 +4,14 @@
       <span class="back-link" @click="goToProfile">← Повернутися в профіль</span>
 
       <form class="startup-form" @submit.prevent="submitStartup">
-        <h2>Створити стартап</h2>
+        <h2>Створити ідею</h2>
 
         <div v-if="formError" class="error-message">{{ formError }}</div>
 
         <div class="input-group">
           <input
               type="text"
-              placeholder="Назва стартапу"
+              placeholder="Назва ідеї"
               v-model="form.name"
               required
           />
@@ -167,7 +167,7 @@ const submitStartup = async () => {
         Authorization: `Bearer ${jwt}`
       }
     });
-    showNotificationModal('Успіх!', 'Стартап успішно створено.', 'success', () => {
+    showNotificationModal('Успіх!', 'Ідею успішно створено.', 'success', () => {
       router.push('/profile');
     });
     // Очищаємо форму після успішного створення, якщо не було редиректу одразу
@@ -175,8 +175,8 @@ const submitStartup = async () => {
     form.value.description = '';
 
   } catch (error) {
-    console.error('Помилка створення стартапу:', error);
-    let errorMessageText = 'Не вдалося створити стартап. Спробуйте ще раз.';
+    console.error('Помилка створення ідеї:', error);
+    let errorMessageText = 'Не вдалося створити ідею. Спробуйте ще раз.';
     if (error.response && error.response.data) {
       if (error.response.data.detail) {
         errorMessageText = Array.isArray(error.response.data.detail) ?
@@ -202,7 +202,7 @@ onMounted(() => {
     // Замість прямого редиректу, покажемо сповіщення, якщо користувач якось потрапив сюди без токену
     showNotificationModal(
         'Помилка доступу',
-        'Для створення стартапу необхідно авторизуватися.',
+        'Для створення ідеї необхідно авторизуватися.',
         'error',
         () => { router.push('/login'); }
     );

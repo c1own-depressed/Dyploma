@@ -8,7 +8,7 @@
       <input
           type="text"
           v-model="searchQuery"
-          placeholder="Пошук стартапу..."
+          placeholder="Пошук ідеї..."
           class="search-input"
       />
 
@@ -53,7 +53,7 @@
                 </component>
               </li>
             </ul>
-            <p v-else-if="startupItem.tasks" class="empty-message">Немає завдань для цього стартапу.</p>
+            <p v-else-if="startupItem.tasks" class="empty-message">Немає завдань для цієї ідеї.</p>
 
             <p class="owner">Власник: {{ startupItem.owner_username }}</p>
 
@@ -113,7 +113,7 @@ async function fetchStartups() {
       newComment: '',
     }))
   } catch (error) {
-    console.error('Помилка при завантаженні стартапів:', error)
+    console.error('Помилка при завантаженні ідей:', error)
   }
 }
 
