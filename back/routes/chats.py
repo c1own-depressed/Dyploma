@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Form, UploadFile, 
 from pydantic import BaseModel  # Додано для тіла запиту редагування
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import insert, select, or_, update, func, desc, delete, and_  # Додано and_
+from starlette.responses import FileResponse
 
 from auth.database import get_async_session, User
 # Припускаємо, що у вас є об'єкти таблиць, визначені приблизно так:
