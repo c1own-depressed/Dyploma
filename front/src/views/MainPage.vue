@@ -28,7 +28,7 @@
           </p>
         </div>
 
-        <div class="expand-toggle" @click="toggleExpand(startupItem.id)">
+        <div class="expand-toggle" @click="toggleExpandDescription(startupItem.id)">
           <span :class="{ rotated: expandedId === startupItem.id }">▼</span>
         </div>
 
@@ -37,7 +37,7 @@
             <h4>Завдання:</h4>
             <ul v-if="startupItem.tasks && startupItem.tasks.length" class="task-list">
               <li
-                  v-for="taskItem in startupItem.tasks"
+                  v-for="taskItem in displayedTasks(startupItem)"
                   :key="taskItem.id"
                   :class="['task-list-item', { 'non-clickable': taskItem.status !== 'pending' }]"
               >
@@ -53,7 +53,15 @@
                 </component>
               </li>
             </ul>
-            <p v-else-if="startupItem.tasks" class="empty-message">Немає завдань для цієї ідеї.</p>
+            <button
+                v-if="startupItem.tasks && startupItem.tasks.length > tasksToShowLimit"
+                @click="toggleShowAllTasks(startupItem)"
+                class="toggle-tasks-button"
+            >
+              {{ startupItem.showAllTasks ? 'Згорнути завдання' : `Показати всі ${startupItem.tasks.length} завдань` }}
+            </button>
+            <p v-else-if="startupItem.tasks && !startupItem.tasks.length" class="empty-message">Немає завдань для цієї ідеї.</p>
+
 
             <p class="owner">Власник: {{ startupItem.owner_username }}</p>
 
@@ -75,6 +83,7 @@
                     v-model="startupItem.newComment"
                     placeholder="Написати коментар..."
                     class="comment-input"
+                    @keyup.enter="addComment(startupItem.id)"
                 />
                 <button @click="addComment(startupItem.id)" class="comment-button">Надіслати</button>
               </div>
@@ -90,37 +99,53 @@
 import Navbar from '../components/Navbar.vue'
 import {ref, computed, onMounted, nextTick} from 'vue'
 import axios from 'axios'
-import {useRouter} from 'vue-router'
-
-const router = useRouter()
+// useRouter не використовується, якщо навігація тільки через router-link
+// import {useRouter} from 'vue-router'
+// const router = useRouter()
 
 const startups = ref([])
 const searchQuery = ref('')
-const expandedId = ref(null)
+const expandedId = ref(null) // Для розгортання опису та контенту
 const descriptionRefs = ref({})
 const jwt = localStorage.getItem('jwtToken')
+
+const tasksToShowLimit = ref(3); // Ліміт завдань для показу спочатку
 
 async function fetchStartups() {
   try {
     const response = await axios.get('http://localhost:8000/startups', {
       headers: { Authorization: `Bearer ${jwt}` }
     })
-    // Переконуємося, що tasks існують і мають очікувані поля (включаючи status)
     startups.value = response.data.map(s => ({
       ...s,
-      tasks: Array.isArray(s.tasks) ? s.tasks : [], // Гарантуємо, що tasks це масив
+      tasks: Array.isArray(s.tasks) ? s.tasks : [],
       comments: [],
       newComment: '',
+      showAllTasks: false, // Додаємо стан для кожного стартапу
     }))
   } catch (error) {
     console.error('Помилка при завантаженні ідей:', error)
   }
 }
 
+// Обчислювана властивість для відображення завдань
+const displayedTasks = (startupItem) => {
+  if (startupItem.showAllTasks || !startupItem.tasks) {
+    return startupItem.tasks || [];
+  }
+  return startupItem.tasks.slice(0, tasksToShowLimit.value);
+};
+
+// Функція для перемикання відображення всіх завдань
+function toggleShowAllTasks(startupItem) {
+  startupItem.showAllTasks = !startupItem.showAllTasks;
+}
+
+
 async function fetchComments(startupId) {
   try {
     const response = await axios.get(`http://localhost:8000/startups/${startupId}/comments`, {
-      headers: { Authorization: `Bearer ${jwt}` }
+      headers: {Authorization: `Bearer ${jwt}`}
     })
 
     const startup = startups.value.find(s => s.id === startupId)
@@ -147,7 +172,6 @@ async function addComment(startupId) {
           },
         }
     )
-    // Припускаємо, що response.data містить поле created_at, яке потрібно для formatDate
     startup.comments.push(response.data)
     startup.newComment = ''
   } catch (error) {
@@ -156,19 +180,19 @@ async function addComment(startupId) {
 }
 
 function formatDate(dateStr) {
-  if (!dateStr) return ''; // Обробка випадку, якщо дата відсутня
+  if (!dateStr) return '';
   const date = new Date(dateStr)
-  return date.toLocaleString() // Це вже має працювати правильно, якщо з бекенду приходить aware UTC datetime
+  return date.toLocaleString('uk-UA')
 }
 
-// Функція для отримання текстового опису статусу завдання
 function getTaskStatusText(status) {
-  // Ви можете розширити цей список відповідно до всіх можливих статусів
-  if (status === 'in_progress') return 'В роботі';
-  if (status === 'pending') return 'Очікує';
-  if (status === 'done') return 'Виконано';
-  if (status === 'paid') return 'Оплачено';
-  return status; // Повертаємо сам статус, якщо немає відповідного тексту
+  const statusMap = {
+    'in_progress': 'В роботі',
+    'pending': 'Очікує',
+    'done': 'Виконано',
+    'paid': 'Оплачено'
+  };
+  return statusMap[status] || status;
 }
 
 onMounted(fetchStartups)
@@ -183,33 +207,35 @@ function setDescriptionRef(el, id) {
   if (el) descriptionRefs.value[id] = el
 }
 
-async function toggleExpand(id) {
+async function toggleExpandDescription(id) {
   const prev = expandedId.value
 
   if (prev === id) {
-    collapse(id)
+    collapseDescription(id)
     expandedId.value = null
   } else {
-    if (prev !== null) collapse(prev)
+    if (prev !== null) collapseDescription(prev)
     expandedId.value = id
-    await fetchComments(id) // Завантажуємо коментарі при розгортанні
-    await nextTick(() => expand(id)) // Розгортаємо опис
+    const startup = startups.value.find(s => s.id === id);
+    if (startup && !startup.comments.length) { // Завантажуємо коментарі, тільки якщо їх ще немає
+      await fetchComments(id);
+    }
+    await nextTick(() => expandDescription(id))
   }
 }
 
-function expand(id) {
+function expandDescription(id) {
   const el = descriptionRefs.value[id]
   if (el) {
     el.style.height = el.scrollHeight + 'px'
   }
 }
 
-function collapse(id) {
+function collapseDescription(id) {
   const el = descriptionRefs.value[id]
   if (el) {
-    // Це потрібно для правильної анімації при швидких кліках
     el.style.height = el.scrollHeight + 'px'
-    void el.offsetHeight // Force reflow
+    void el.offsetHeight
     el.style.height = '0px'
   }
 }
@@ -219,9 +245,9 @@ function collapse(id) {
 /* ... (попередні стилі для .main-page, .content, .search-input, .startup-card, .title і т.д.) ... */
 .main-page {
   padding: 2rem;
-  padding-top: 100px;
+  padding-top: 100px; /* Відступ для Navbar */
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background-image: url('../assets/img.jpg');
+  background-image: url('../assets/img.jpg'); /* Переконайся, що шлях правильний */
   background-size: cover;
   background-position: center;
   background-attachment: fixed;
@@ -280,7 +306,7 @@ function collapse(id) {
   font-weight: 600;
   margin-bottom: 0.75rem;
   color: #ffffff;
-  text-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .owner {
@@ -298,11 +324,11 @@ function collapse(id) {
 }
 
 .description-wrapper.expanded {
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.5rem; /* Додаємо відступ знизу, коли опис розгорнуто */
 }
 
 .description-text {
-  padding-top: 0.5rem;
+  padding-top: 0.5rem; /* Невеликий відступ зверху для тексту опису */
   color: #d5d8de;
   line-height: 1.6;
 }
@@ -316,15 +342,16 @@ function collapse(id) {
   border-radius: 50%;
   transition: background-color 0.2s ease;
 }
+
 .expand-toggle:hover {
-  background-color: rgba(255,255,255,0.1);
+  background-color: rgba(255, 255, 255, 0.1);
 }
 
 .expand-toggle span {
   font-size: 1.6rem;
   transition: transform 0.4s ease-in-out;
   color: #a0a8b5;
-  display: block;
+  display: block; /* Важливо для правильного обертання */
 }
 
 .expand-toggle span.rotated {
@@ -335,21 +362,22 @@ function collapse(id) {
   font-size: 1.1rem;
   font-weight: 600;
   color: #e0e1e6;
-  margin-top: 1.5rem;
+  margin-top: 1.5rem; /* Збільшено для кращого візуального розділення */
   margin-bottom: 0.8rem;
 }
+
 .additional-content > h4:first-of-type {
-  margin-top: 0.5rem;
+  margin-top: 0.5rem; /* Зменшено, якщо це перший заголовок після опису */
 }
 
 .task-list {
-  padding-left: 0;
-  list-style-type: none;
+  padding-left: 0; /* Прибираємо стандартний відступ списку */
+  list-style-type: none; /* Прибираємо маркери списку */
 }
 
 .task-list-item { /* Загальний стиль для елемента списку завдань */
   margin-bottom: 0.5rem;
-  padding: 0.3rem 0;
+  padding: 0.3rem 0; /* Невеликий вертикальний падінг */
 }
 
 .task-link { /* Стиль для тексту завдання (посилання або span) */
@@ -374,12 +402,32 @@ function collapse(id) {
   text-decoration: underline;
 }
 
+
 .task-status-indicator { /* Стиль для тексту статусу завдання */
   font-size: 0.85em;
   font-style: italic;
   margin-left: 8px;
-  color: #a0a8b5; /* Або інший колір, який вам подобається */
+  color: #a0a8b5;
 }
+
+.toggle-tasks-button {
+  background-color: transparent;
+  border: 1px solid #90caf9;
+  color: #90caf9;
+  padding: 0.4rem 0.8rem;
+  margin-top: 0.5rem; /* Відступ зверху від списку завдань */
+  margin-bottom: 1rem; /* Відступ знизу перед власником */
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.toggle-tasks-button:hover {
+  background-color: rgba(144, 202, 249, 0.1);
+  color: #bbdefb;
+}
+
 
 .empty-message {
   font-style: italic;
@@ -390,16 +438,16 @@ function collapse(id) {
 
 .comments-section {
   margin-top: 1.5rem;
-  background: rgba(20, 15, 30, 0.5);
+  background: rgba(20, 15, 30, 0.5); /* Трохи інший фон для секції коментарів */
   padding: 1.2rem 1.5rem;
   border-radius: 12px;
-  border-top: 1px solid rgba(255,255,255,0.08);
+  border-top: 1px solid rgba(255, 255, 255, 0.08); /* Лінія зверху для візуального розділення */
 }
 
 .comment-list {
   list-style: none;
   padding: 0;
-  margin-bottom: 1.2rem;
+  margin-bottom: 1.2rem; /* Відступ під списком коментарів */
 }
 
 .comment-list li {
@@ -407,6 +455,7 @@ function collapse(id) {
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   padding-bottom: 0.8rem;
 }
+
 .comment-list li:last-child {
   border-bottom: none;
   margin-bottom: 0;
@@ -417,6 +466,7 @@ function collapse(id) {
   color: #8a92a0;
   margin-bottom: 0.3rem;
 }
+
 .comment-meta strong {
   color: #b0b8c5;
   font-weight: 500;
@@ -431,7 +481,7 @@ function collapse(id) {
 .add-comment {
   display: flex;
   gap: 0.8rem;
-  margin-top: 1rem;
+  margin-top: 1rem; /* Відступ над полем вводу коментаря */
 }
 
 .comment-input {
@@ -444,17 +494,19 @@ function collapse(id) {
   outline: none;
   transition: background-color 0.3s ease, border-color 0.3s ease;
 }
+
 .comment-input:focus {
   background: rgba(255, 255, 255, 0.12);
   border-color: rgba(255, 255, 255, 0.3);
 }
+
 .comment-input::placeholder {
   color: rgba(255, 255, 255, 0.6);
 }
 
 .comment-button {
   padding: 0.7rem 1.2rem;
-  background-color: #007aff;
+  background-color: #007aff; /* Яскравий синій для кнопки */
   border: none;
   border-radius: 10px;
   color: white;
@@ -464,7 +516,7 @@ function collapse(id) {
 }
 
 .comment-button:hover {
-  background-color: #005bb5;
+  background-color: #005bb5; /* Темніший синій при наведенні */
 }
 
 /* Анімації (slide-fade) залишаються як є */
@@ -472,14 +524,17 @@ function collapse(id) {
 .slide-fade-leave-active {
   transition: opacity 0.5s ease-in-out, transform 0.5s ease-in-out;
 }
+
 .slide-fade-enter-from,
 .slide-fade-leave-to {
   opacity: 0;
-  transform: translateY(-15px);
+  transform: translateY(-15px); /* Зсув для анімації виїзду/в'їзду */
 }
+
 .slide-fade-enter-to,
 .slide-fade-leave-from {
   opacity: 1;
   transform: translateY(0);
 }
+
 </style>

@@ -51,7 +51,7 @@
                 <p>{{ startupItem.description }}</p>
                 <h4>Завдання:</h4>
                 <ul v-if="startupItem.tasks && startupItem.tasks.length">
-                  <li v-for="taskItem in startupItem.tasks" :key="taskItem.id">
+                  <li v-for="taskItem in displayedTasksInProfile(startupItem)" :key="taskItem.id">
                     <div class="task-toggle" @click="toggleExpand('task', taskItem.id)">
                       <span class="task-title-text">{{ taskItem.title }}</span>
                       <span class="expand-toggle">{{ expandedIds.tasks[taskItem.id] ? '▲' : '▼' }}</span>
@@ -67,7 +67,15 @@
                     </transition>
                   </li>
                 </ul>
-                <p v-else>Немає завдань</p>
+                <button
+                    v-if="startupItem.tasks && startupItem.tasks.length > tasksToShowLimitStartups"
+                    @click="toggleShowAllTasksInProfile(startupItem)"
+                    class="toggle-profile-tasks-button"
+                >
+                  {{ startupItem.showAllTasksInProfile ? 'Згорнути завдання' : `Показати всі ${startupItem.tasks.length}` }}
+                </button>
+                <p v-else-if="startupItem.tasks && !startupItem.tasks.length">Немає завдань</p>
+
 
                 <div class="startup-actions">
                   <button class="complete-btn" @click.stop="editStartup(startupItem.id)">Редагувати ідею</button>
@@ -80,7 +88,7 @@
                     <div class="comment-entry-header">
                       <strong class="comment-author">{{ commentEntry.author_username }}</strong>
                       <div class="comment-meta-and-actions">
-                        <span class="comment-date-small">{{ new Date(commentEntry.created_at).toLocaleString() }}</span>
+                        <span class="comment-date-small">{{ new Date(commentEntry.created_at).toLocaleString('uk-UA') }}</span>
                         <button @click.stop="confirmDeleteStartupCommentAction(startupItem.id, commentEntry.id, commentEntry.text)" class="delete-comment-icon" title="Видалити коментар">
                           &#x2715; </button>
                       </div>
@@ -177,6 +185,9 @@ const activeTab = ref('startups')
 const expandedIds = ref({ startups: {}, tasks: {} })
 const jwt = localStorage.getItem('jwtToken')
 
+// Ліміт завдань для показу спочатку у вкладці "Мої ідеї"
+const tasksToShowLimitStartups = ref(3);
+
 // --- Стан для універсального модального вікна ---
 const showConfirmModal = ref(false)
 const confirmModalTitle = ref('')
@@ -184,7 +195,7 @@ const confirmModalMessage = ref('')
 const confirmActionCallback = ref(null)
 const confirmButtonText = ref('Так')
 const cancelButtonText = ref('Скасувати')
-const isNotificationModal = ref(false); // Прапорець для режиму сповіщення
+const isNotificationModal = ref(false);
 // --- Кінець стану для модального вікна ---
 
 const fetchProfile = async () => {
@@ -215,7 +226,8 @@ const fetchStartups = async () => {
     startups.value = res.data.map(startup => ({
       ...startup,
       tasks: startup.tasks || [],
-      comments: startup.comments || []
+      comments: startup.comments || [],
+      showAllTasksInProfile: false, // Додаємо стан для згортання завдань у профілі
     }));
     startups.value.forEach(s => {
       if (expandedIds.value.startups[s.id] === undefined) {
@@ -231,6 +243,23 @@ const fetchStartups = async () => {
     console.error('Помилка при завантаженні ідей', e)
   }
 }
+
+// Функція для відображення завдань у профілі (згортання/розгортання)
+const displayedTasksInProfile = (startupItem) => {
+  if (!startupItem || !startupItem.tasks) return [];
+  if (startupItem.showAllTasksInProfile) {
+    return startupItem.tasks;
+  }
+  return startupItem.tasks.slice(0, tasksToShowLimitStartups.value);
+};
+
+// Функція для перемикання відображення всіх завдань у профілі
+const toggleShowAllTasksInProfile = (startupItem) => {
+  if (startupItem) {
+    startupItem.showAllTasksInProfile = !startupItem.showAllTasksInProfile;
+  }
+};
+
 
 const fetchTasks = async () => {
   if (!jwt) return;
@@ -275,7 +304,14 @@ const markTaskAsPaid = async (taskId) => {
     if (activeTab.value === 'tasks') {
       await fetchTasks();
     } else if (activeTab.value === 'startups') {
-      await fetchStartups();
+      // Оновлення статусу завдання всередині стартапу
+      const startupContainingTask = startups.value.find(s => s.tasks.some(t => t.id === taskId));
+      if (startupContainingTask) {
+        const taskIndex = startupContainingTask.tasks.findIndex(t => t.id === taskId);
+        if (taskIndex !== -1) {
+          startupContainingTask.tasks[taskIndex].status = 'paid';
+        }
+      }
     }
     showNotification('Статус оновлено', 'Статус завдання успішно оновлено на "Оплачено".');
   } catch (e) {
@@ -298,7 +334,7 @@ const fetchUserRating = async () => {
   } catch (e) { console.error('Не вдалося отримати рейтинг', e); }
 };
 
-// --- Функції з використанням модального вікна ---
+// --- Функції з використанням модального вікна (без змін) ---
 const showNotification = (title, message) => {
   confirmModalTitle.value = title;
   confirmModalMessage.value = message;
@@ -313,7 +349,7 @@ const confirmRemoveExecutor = (taskId) => {
   confirmModalMessage.value = 'Ви впевнені, що хочете відключити виконавця від цього завдання? <br/> Це поверне завдання у статус "Очікує на виконавця".';
   confirmButtonText.value = 'Відключити';
   cancelButtonText.value = 'Скасувати';
-  isNotificationModal.value = false; // Переконуємось, що це не режим сповіщення
+  isNotificationModal.value = false;
   confirmActionCallback.value = () => actualRemoveExecutor(taskId);
   showConfirmModal.value = true;
 };
@@ -321,7 +357,7 @@ const confirmRemoveExecutor = (taskId) => {
 const actualRemoveExecutor = async (taskId) => {
   try {
     await axios.put(`http://localhost:8000/user/startups/tasks/${taskId}/remove-executor`, {}, { headers: { Authorization: `Bearer ${jwt}` } });
-    await fetchStartups();
+    await fetchStartups(); // Оновити список стартапів, щоб відобразити зміни
     showNotification('Успіх!', 'Виконавця успішно відключено від завдання.');
   } catch (e) {
     console.error('Не вдалося відключити виконавця:', e);
@@ -347,9 +383,13 @@ const confirmDeleteStartupCommentAction = (startupId, commentId, commentText = '
 const actualDeleteStartupComment = async (startupId, commentId) => {
   try {
     await axios.delete(`http://localhost:8000/user/startups/${startupId}/comments/${commentId}`, {
-      headers: { Authorization: `Bearer ${jwt}` }
+      headers: {Authorization: `Bearer ${jwt}`}
     });
-    await fetchStartups();
+    // Оновити коментарі для конкретного стартапу
+    const startupToUpdate = startups.value.find(s => s.id === startupId);
+    if (startupToUpdate) {
+      startupToUpdate.comments = startupToUpdate.comments.filter(c => c.id !== commentId);
+    }
     showNotification('Успіх!', 'Коментар успішно видалено.');
   } catch (e) {
     console.error('Помилка при видаленні коментаря ідеї', e);
@@ -373,14 +413,15 @@ const confirmRefuseTask = (taskId) => {
 
 const actualRefuseTask = async (taskId) => {
   try {
-    await axios.put(`http://localhost:8000/user/tasks/${taskId}/refuse`, {}, { headers: { Authorization: `Bearer ${jwt}` } });
-    await fetchTasks();
+    await axios.put(`http://localhost:8000/user/tasks/${taskId}/refuse`, {}, {headers: {Authorization: `Bearer ${jwt}`}});
+    await fetchTasks(); // Оновити список активних завдань
     showNotification('Завдання скасовано', 'Ви успішно відмовилися від виконання цього завдання.');
   } catch (e) {
     console.error('Не вдалося відмовитися від завдання', e);
     showNotification('Помилка', `Не вдалося відмовитися від завдання: ${e.response?.data?.detail || e.message}`);
   }
 };
+
 
 const proceedWithAction = () => {
   if (!isNotificationModal.value && typeof confirmActionCallback.value === 'function') {
@@ -395,9 +436,8 @@ const cancelAction = () => {
 
 const closeConfirmModal = () => {
   showConfirmModal.value = false;
-  // Не скидаємо title/message одразу, щоб вони не зникли під час анімації закриття
   setTimeout(() => {
-    if (!showConfirmModal.value) { // Перевірка, чи модалка все ще закрита
+    if (!showConfirmModal.value) {
       confirmModalTitle.value = '';
       confirmModalMessage.value = '';
       confirmActionCallback.value = null;
@@ -405,7 +445,7 @@ const closeConfirmModal = () => {
       cancelButtonText.value = 'Скасувати';
       isNotificationModal.value = false;
     }
-  }, 300); // Має бути трохи більше або дорівнювати часу анімації .profile-modal-content
+  }, 300);
 };
 
 const handleGlobalEscProfile = (event) => {
@@ -414,8 +454,9 @@ const handleGlobalEscProfile = (event) => {
   }
 };
 
+
 watch(activeTab, (newTab) => {
-  expandedIds.value = { startups: {}, tasks: {} };
+  expandedIds.value = {startups: {}, tasks: {}}; // Скидаємо стани розгортання при зміні вкладки
   if (newTab === 'startups') {
     fetchStartups();
   } else if (newTab === 'tasks') {
@@ -445,20 +486,41 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* ... (попередні стилі) ... */
+.toggle-profile-tasks-button { /* Стилі для кнопки згортання/розгортання завдань у профілі */
+  background-color: transparent;
+  border: 1px solid #007aff; /* Такий же колір, як у активної вкладки для консистентності */
+  color: #007aff;
+  padding: 0.5rem 1rem;
+  margin-top: 0.8rem; /* Відступ зверху від списку завдань */
+  margin-bottom: 1rem; /* Відступ знизу перед "Дії зі стартапом" */
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: background-color 0.2s ease, color 0.2s ease;
+  display: inline-block; /* Щоб кнопка не розтягувалася на всю ширину */
+}
+
+.toggle-profile-tasks-button:hover {
+  background-color: rgba(0, 123, 255, 0.1);
+  color: #3395ff;
+}
+
 .profile-page {
   padding: 2rem;
-  padding-top: 80px;
+  padding-top: 80px; /* Збільшено для Navbar, якщо вона фіксована і висока */
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   color: #f0f0f0;
-  background-image: url('../assets/img.jpg');
+  background-image: url('../assets/img.jpg'); /* Перевірте шлях до зображення */
   background-size: cover;
   background-position: center;
   background-attachment: fixed;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  width: 100%;
+  align-items: center; /* Центруємо основний контент */
+  width: 100%; /* Щоб фон займав всю ширину */
 }
 
 .Profile123 {
@@ -466,56 +528,60 @@ onUnmounted(() => {
   font-weight: 600;
   color: #ffffff;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-  margin-top: 50px;
-  margin-bottom: 2.5rem;
+  margin-top: 50px; /* Відступ зверху для заголовка */
+  margin-bottom: 2.5rem; /* Збільшений відступ знизу */
   text-align: center;
 }
 
 .user-info {
-  background: rgba(35, 30, 50, 0.65);
+  background: rgba(35, 30, 50, 0.65); /* Трохи темніший фон для кращого контрасту */
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   padding: 1.8rem 2.2rem;
   margin-bottom: 2rem;
-  border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  border-radius: 18px; /* Збільшений радіус для м'якшого вигляду */
+  border: 1px solid rgba(255, 255, 255, 0.12); /* Тонка світла рамка */
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3); /* Глибша тінь */
   width: 100%;
-  max-width: 280px;
-  text-align: center;
+  max-width: 280px; /* Обмежуємо ширину для компактності */
+  text-align: center; /* Центруємо текст всередині блоку */
 }
 
 .user-info p {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: flex; /* Для вирівнювання іконки та тексту */
+  align-items: center; /* Вертикальне вирівнювання */
+  justify-content: center; /* Горизонтальне центрування */
   font-size: 1rem;
   margin-bottom: 0.8rem;
   color: #e0e1e6;
 }
+
 .user-info p:last-child {
   margin-bottom: 0;
 }
+
 .user-info strong {
   color: #ffffff;
-  font-weight: 500;
+  font-weight: 500; /* Не надто жирний */
 }
+
 .icon {
   display: inline-flex;
   align-items: center;
   margin-right: 0.8rem;
-  color: #a0a8b5;
+  color: #a0a8b5; /* Колір іконок */
 }
+
 .icon-svg {
-  width: 1.2em;
+  width: 1.2em; /* Розмір іконки */
   height: 1.2em;
-  stroke: currentColor;
+  stroke: currentColor; /* Використовує колір батьківського елемента (.icon) */
 }
 
 .tabs {
   display: flex;
   justify-content: center;
-  gap: 1rem;
+  gap: 1rem; /* Проміжок між кнопками */
   margin-bottom: 2rem;
 }
 
@@ -523,7 +589,7 @@ onUnmounted(() => {
   padding: 0.7rem 1.5rem;
   border: 1px solid rgba(255, 255, 255, 0.2);
   cursor: pointer;
-  background: rgba(50, 50, 70, 0.5);
+  background: rgba(50, 50, 70, 0.5); /* Напівпрозорий фон для кнопок */
   color: #e0e1e6;
   border-radius: 10px;
   font-size: 0.95rem;
@@ -537,32 +603,33 @@ onUnmounted(() => {
 }
 
 .tabs button.active {
-  background: #007aff;
+  background: #007aff; /* Яскравий синій для активної вкладки */
   border-color: #007aff;
   color: #ffffff;
-  box-shadow: 0 0 10px rgba(0, 123, 255, 0.5);
+  box-shadow: 0 0 10px rgba(0, 123, 255, 0.5); /* Світіння для активної вкладки */
 }
 
 .tab-content {
   width: 100%;
-  max-width: 800px;
+  max-width: 800px; /* Обмежуємо ширину контенту вкладок */
 }
+
 .tab-content h2 {
   font-size: 1.5rem;
   font-weight: 600;
   color: #ffffff;
   margin-bottom: 1.5rem;
   text-align: center;
-  text-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .tab-content ul {
   list-style: none;
-  padding-left: 0;
+  padding-left: 0; /* Прибираємо стандартний відступ для списків */
   width: 100%;
 }
 
-.task-item {
+.task-item { /* Стиль для кожного елемента списку (стартапу чи завдання) */
   background: rgba(35, 30, 50, 0.6);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
@@ -573,6 +640,7 @@ onUnmounted(() => {
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
   transition: box-shadow 0.3s ease;
 }
+
 .task-item:hover {
   box-shadow: 0 6px 25px rgba(0, 0, 0, 0.35);
 }
@@ -581,53 +649,59 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.5rem 0;
+  padding: 0.5rem 0; /* Зменшено вертикальний падінг */
   cursor: pointer;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  margin-bottom: 1rem;
+  margin-bottom: 1rem; /* Відступ під заголовком/перемикачем */
 }
-.task-item ul .task-toggle {
-  border-top: 1px solid rgba(255,255,255,0.05);
+
+.task-item ul .task-toggle { /* Специфічний стиль для перемикача завдання всередині стартапу */
+  border-top: 1px solid rgba(255, 255, 255, 0.05); /* Тонка лінія зверху */
   margin-top: 0.5rem;
   padding: 0.5rem 0;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.5rem; /* Зменшено відступ */
 }
-.task-item > .task-header {
+
+.task-item > .task-header { /* Заголовок самого стартапу */
   padding-top: 0;
   margin-bottom: 1rem;
 }
 
 .task-title, .task-title-text {
-  flex-grow: 1;
+  flex-grow: 1; /* Щоб назва займала доступний простір */
   font-size: 1.1rem;
   font-weight: 600;
   color: #e8e9ed;
 }
+
 .centered-title {
   text-align: center;
-  font-size: 1.2rem;
+  font-size: 1.2rem; /* Трохи більший шрифт для заголовків стартапів */
 }
-.task-title-text {
-  margin-left: 0;
-  white-space: normal;
-  font-size: 1rem;
+
+.task-title-text { /* Для назв завдань всередині стартапу */
+  margin-left: 0; /* Прибираємо відступ, якщо він був */
+  white-space: normal; /* Дозволяємо перенос тексту */
+  font-size: 1rem; /* Стандартний розмір */
 }
 
 .expand-toggle {
-  font-size: 1.3rem;
+  font-size: 1.3rem; /* Розмір стрілочки */
   color: #a0a8b5;
-  padding: 0.3rem;
-  transition: transform 0.4s ease-in-out;
+  padding: 0.3rem; /* Невеликий падінг навколо стрілки для кращого кліку */
+  transition: transform 0.4s ease-in-out; /* Плавне обертання */
 }
 
-.task-details {
+.task-details { /* Блок з деталями, що розгортається */
   padding-top: 0.8rem;
   color: #c5c8ce;
   line-height: 1.6;
 }
+
 .task-details p {
-  margin: 0.6rem 0;
+  margin: 0.6rem 0; /* Відступи для параграфів */
 }
+
 .task-details h4 {
   font-size: 1rem;
   font-weight: 600;
@@ -635,17 +709,19 @@ onUnmounted(() => {
   margin-top: 1.2rem;
   margin-bottom: 0.5rem;
 }
-.task-details ul {
-  padding-left: 1rem;
+
+.task-details ul { /* Список завдань всередині стартапу */
+  padding-left: 1rem; /* Невеликий відступ для вкладеного списку */
   margin-top: 0.5rem;
 }
-.task-details ul li {
-  background: transparent;
+
+.task-details ul li { /* Елементи вкладеного списку завдань */
+  background: transparent; /* Прозорий фон */
   padding: 0.3rem 0;
   border-radius: 0;
   margin-bottom: 0.3rem;
-  box-shadow: none;
-  border: none;
+  box-shadow: none; /* Без тіні */
+  border: none; /* Без рамки */
 }
 
 .create-startup-btn, .edit-btn, .complete-btn, .refuse-btn, .remove-executor-btn {
@@ -656,86 +732,96 @@ onUnmounted(() => {
   font-weight: 500;
   font-size: 0.9rem;
   transition: background-color 0.2s ease, box-shadow 0.2s ease;
-  margin-right: 0.8rem;
-  margin-top: 1rem;
+  margin-right: 0.8rem; /* Відступ між кнопками */
+  margin-top: 1rem; /* Відступ зверху для кнопок */
 }
 
 .startup-actions button:last-child,
 .task-details button:last-child {
-  margin-right: 0;
+  margin-right: 0; /* Прибираємо відступ для останньої кнопки в ряду */
 }
 
 .create-startup-btn {
   background-color: #007aff;
   color: #ffffff;
-  display: block;
+  display: block; /* Щоб margin: auto спрацював для центрування */
   margin-left: auto;
   margin-right: auto;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.5rem; /* Відступ під кнопкою */
 }
+
 .create-startup-btn:hover {
   background-color: #005bb5;
   box-shadow: 0 2px 8px rgba(0, 123, 255, 0.4);
 }
 
-.edit-btn {
-  background-color: rgba(147, 38, 198, 0.7);
+.edit-btn { /* "Редагувати ідею", "+ Додати завдання" */
+  background-color: rgba(147, 38, 198, 0.7); /* Фіолетовий */
   color: #ffffff;
 }
+
 .edit-btn:hover {
   background-color: rgba(120, 30, 160, 0.8);
   box-shadow: 0 2px 8px rgba(147, 38, 198, 0.4);
 }
 
-.complete-btn {
+.complete-btn { /* "Переглянути результат", "Виконати" */
   background-color: transparent;
-  color: #82ddf0;
+  color: #82ddf0; /* Світло-блакитний */
   border: 1px solid #82ddf0;
 }
+
 .complete-btn:hover {
   background-color: rgba(130, 221, 240, 0.15);
   border-color: #a0e5f3;
   box-shadow: 0 2px 8px rgba(130, 221, 240, 0.3);
 }
-.complete-btn.paid-style {
-  border-color: #5cb85c;
+
+.complete-btn.paid-style { /* "Оплачено" */
+  border-color: #5cb85c; /* Зелений */
   color: #5cb85c;
 }
+
 .complete-btn.paid-style:hover {
   background-color: rgba(92, 184, 92, 0.15);
   border-color: #77c977;
   box-shadow: 0 2px 8px rgba(92, 184, 92, 0.3);
 }
 
-.refuse-btn {
-  background-color: #e74c3c;
+
+.refuse-btn { /* "Відмовитися" */
+  background-color: #e74c3c; /* Червоний */
   color: white;
 }
+
 .refuse-btn:hover {
   background-color: #c0392b;
   box-shadow: 0 2px 8px rgba(231, 76, 60, 0.4);
 }
-.remove-executor-btn {
-  background-color: #e67e22;
+
+.remove-executor-btn { /* "Відключити виконавця" */
+  background-color: #e67e22; /* Помаранчевий */
   color: white;
 }
+
 .remove-executor-btn:hover {
   background-color: #d35400;
   box-shadow: 0 2px 8px rgba(230, 126, 34, 0.4);
 }
 
+
 .expandable {
-  overflow: hidden;
+  overflow: hidden; /* Важливо для анімації висоти */
 }
+
+/* Анімація розгортання/згортання */
 .expand-enter-active,
 .expand-leave-active {
-  transition: max-height 0.5s cubic-bezier(0.4, 0, 0.2, 1),
-  opacity 0.45s cubic-bezier(0.4, 0, 0.2, 1) 0.05s,
-  padding-top 0.5s cubic-bezier(0.4, 0, 0.2, 1),
+  transition: max-height 0.5s cubic-bezier(0.4, 0, 0.2, 1), /* Плавна анімація висоти */ opacity 0.45s cubic-bezier(0.4, 0, 0.2, 1) 0.05s, /* Анімація прозорості з невеликою затримкою */ padding-top 0.5s cubic-bezier(0.4, 0, 0.2, 1),
   padding-bottom 0.5s cubic-bezier(0.4, 0, 0.2, 1),
   margin-top 0.5s cubic-bezier(0.4, 0, 0.2, 1),
   margin-bottom 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-  max-height: 1000px;
+  max-height: 1000px; /* Достатньо велика максимальна висота */
   opacity: 1;
 }
 
@@ -743,7 +829,7 @@ onUnmounted(() => {
 .expand-leave-to {
   max-height: 0;
   opacity: 0;
-  padding-top: 0 !important;
+  padding-top: 0 !important; /* !important, щоб перебити інші стилі під час анімації */
   padding-bottom: 0 !important;
   margin-top: 0 !important;
   margin-bottom: 0 !important;
@@ -752,10 +838,10 @@ onUnmounted(() => {
 .startup-actions {
   margin-top: 1.5rem;
   display: flex;
-  justify-content: center;
+  justify-content: center; /* Кнопки по центру */
   gap: 0.8rem;
-  flex-wrap: wrap;
-  margin-bottom: 1rem;
+  flex-wrap: wrap; /* Дозволяємо перенос кнопок */
+  margin-bottom: 1rem; /* Відступ під кнопками дій зі стартапом */
 }
 
 .comments-heading {
@@ -763,8 +849,8 @@ onUnmounted(() => {
   font-weight: 600;
   color: #d5d8de;
   margin-bottom: 0.8rem;
-  padding-top: 0.8rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 0.8rem; /* Відступ зверху, щоб відокремити від кнопок */
+  border-top: 1px solid rgba(255, 255, 255, 0.1); /* Лінія для візуального розділення */
 }
 
 .startup-comments-list {
@@ -774,7 +860,7 @@ onUnmounted(() => {
 }
 
 .comment-entry {
-  background-color: rgba(255, 255, 255, 0.03);
+  background-color: rgba(255, 255, 255, 0.03); /* Дуже легкий фон для коментарів */
   padding: 0.8rem 1rem;
   border-radius: 8px;
   margin-bottom: 0.8rem;
@@ -792,14 +878,14 @@ onUnmounted(() => {
   font-weight: 600;
   color: #c8c9ce;
   font-size: 0.95rem;
-  margin-right: auto;
+  margin-right: auto; /* Автор зліва, решта справа */
 }
 
 .comment-meta-and-actions {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  margin-left: 0.5rem;
+  gap: 0.75rem; /* Проміжок між датою та кнопкою видалення */
+  margin-left: 0.5rem; /* Відступ від автора */
 }
 
 .comment-date-small {
@@ -810,36 +896,37 @@ onUnmounted(() => {
 .delete-comment-icon {
   background: none;
   border: none;
-  color: #e74c3c;
-  font-size: 1.2rem;
+  color: #e74c3c; /* Червоний для видалення */
+  font-size: 1.2rem; /* Трохи більша іконка */
   font-weight: bold;
   cursor: pointer;
-  padding: 0.1rem 0.3rem;
-  line-height: 1;
+  padding: 0.1rem 0.3rem; /* Невеликий падінг для зручності кліку */
+  line-height: 1; /* Щоб іконка не займала зайвої висоти */
   transition: color 0.2s ease;
 }
 
 .delete-comment-icon:hover {
-  color: #c0392b;
+  color: #c0392b; /* Темніший червоний при наведенні */
 }
 
 .comment-text-small {
   font-size: 0.9rem;
   color: #b0b3b8;
   line-height: 1.5;
-  margin-bottom: 0.3rem;
-  white-space: pre-wrap;
-  word-break: break-word;
+  margin-bottom: 0.3rem; /* Невеликий відступ під текстом коментаря */
+  white-space: pre-wrap; /* Зберігаємо переноси рядків */
+  word-break: break-word; /* Дозволяємо перенос довгих слів */
 }
 
 .no-comments-text {
   color: #a0a8b5;
   font-style: italic;
   margin-top: 0.5rem;
-  padding-left: 0.5rem;
+  padding-left: 0.5rem; /* Невеликий відступ для тексту "немає коментарів" */
 }
 
-/* Стилі для універсального модального вікна на сторінці профілю */
+
+/* Стилі для універсального модального вікна (залишаються без змін) */
 .profile-modal-overlay {
   position: fixed;
   top: 0;
@@ -856,22 +943,25 @@ onUnmounted(() => {
 }
 
 @keyframes fadeInOverlayProfile {
-  to { opacity: 1; }
+  to {
+    opacity: 1;
+  }
 }
 
 .profile-modal-content {
-  background-color: #36393f;
+  background-color: #36393f; /* Темний фон модалки */
   padding: 25px 30px;
   border-radius: 8px;
   box-shadow: 0 8px 25px rgba(0, 0, 0, 0.5);
   width: 90%;
-  max-width: 450px;
-  color: #dcddde;
-  text-align: left;
+  max-width: 450px; /* Максимальна ширина модалки */
+  color: #dcddde; /* Світлий текст */
+  text-align: left; /* Вирівнювання тексту в модалці */
   transform: scale(0.95) translateY(0px);
   opacity: 0;
   animation: scaleInModalProfile 0.25s forwards cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
+
 @keyframes scaleInModalProfile {
   to {
     transform: scale(1) translateY(0);
@@ -881,19 +971,22 @@ onUnmounted(() => {
 
 .profile-modal-header {
   display: flex;
-  align-items: center;
+  align-items: center; /* Іконка і заголовок на одному рівні */
   margin-bottom: 15px;
 }
+
 .profile-modal-header-icon {
   margin-right: 12px;
-  flex-shrink: 0;
+  flex-shrink: 0; /* Щоб іконка не стискалася */
   width: 22px;
   height: 22px;
 }
+
 /* Іконка за замовчуванням (попередження) */
 .profile-modal-header-icon {
   color: #f0b232; /* Жовтий для попередження */
 }
+
 /* Іконка для успіху/інформації */
 .profile-modal-header-icon.success {
   color: #28a745; /* Зелений */
@@ -901,7 +994,7 @@ onUnmounted(() => {
 
 
 .profile-modal-content h4 {
-  margin:0;
+  margin: 0;
   font-size: 1.2em;
   color: #ffffff;
   font-weight: 600;
@@ -913,23 +1006,24 @@ onUnmounted(() => {
   line-height: 1.65;
   color: #b9bbbe;
 }
+
 .comment-snippet-preview {
   color: #dcddde;
-  background-color: rgba(255,255,255,0.05);
+  background-color: rgba(255, 255, 255, 0.05);
   padding: 8px 10px;
   border-radius: 4px;
   font-style: italic;
   margin-top: 10px;
-  max-height: 60px;
-  overflow-y: auto;
-  border: 1px solid rgba(255,255,255,0.1);
+  max-height: 60px; /* Обмеження висоти прев'ю коментаря */
+  overflow-y: auto; /* Додаємо скрол, якщо текст не влазить */
+  border: 1px solid rgba(255, 255, 255, 0.1);
   font-size: 0.9em;
 }
 
 
 .profile-modal-actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-end; /* Кнопки справа */
   gap: 12px;
 }
 
@@ -942,32 +1036,36 @@ onUnmounted(() => {
   cursor: pointer;
   transition: background-color 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
 }
+
 .profile-modal-button:active {
-  transform: translateY(1px);
+  transform: translateY(1px); /* Ефект натискання */
 }
 
-.profile-modal-button.confirm {
-  background-color: #d83c3e;
+.profile-modal-button.confirm { /* "Видалити", "Так, відмовитися" */
+  background-color: #d83c3e; /* Червоний */
   color: white;
-  box-shadow: 0 2px 3px rgba(0,0,0,0.2);
+  box-shadow: 0 2px 3px rgba(0, 0, 0, 0.2);
 }
+
 .profile-modal-button.confirm:hover {
   background-color: #bf3032;
-  box-shadow: 0 3px 5px rgba(0,0,0,0.25);
+  box-shadow: 0 3px 5px rgba(0, 0, 0, 0.25);
 }
 
-.profile-modal-button.cancel {
-  background-color: #4f545c;
+.profile-modal-button.cancel { /* "Скасувати", "Залишитися" */
+  background-color: #4f545c; /* Темно-сірий */
   color: #dcddde;
 }
+
 .profile-modal-button.cancel:hover {
   background-color: #5c626a;
 }
 
-.profile-modal-button.ok { /* Стиль для кнопки "ОК" у сповіщеннях */
-  background-color: #007bff;
+.profile-modal-button.ok { /* Кнопка "ОК" для сповіщень */
+  background-color: #007bff; /* Синій */
   color: white;
 }
+
 .profile-modal-button.ok:hover {
   background-color: #0056b3;
 }

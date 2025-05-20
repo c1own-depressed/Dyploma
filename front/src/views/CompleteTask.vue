@@ -22,7 +22,7 @@
 
       <div class="input-group file-input-group">
         <label for="file-upload" class="file-upload-label">
-          Прикріпити файл (необов'язково, до 5MB):
+          Прикріпити файл:
         </label>
         <input
             type="file"
